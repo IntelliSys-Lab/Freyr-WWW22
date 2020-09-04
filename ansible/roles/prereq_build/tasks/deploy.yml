@@ -24,7 +24,7 @@
 
 - name: git clone openwhisk
   git:
-      repo: "https://github.com/hanfeiyu/openwhisk.git"
+      repo: "https://github.com/IntelliSys-Lab/LambdaRM-openwhisk.git"
       dest: /home/ubuntu/openwhisk
   become: true
   when: git_result is failed
