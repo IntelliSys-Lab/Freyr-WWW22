@@ -15,6 +15,7 @@
 #cd ../../ && git clone https://github.com/apache/openwhisk-cli.git
 #cd openwhisk-cli
 #sudo ./gradlew releaseBinaries -PnativeBuild
+#mkdir ../openwhisk/bin
 #cp build/wsk ../openwhisk/bin
 #cd ../openwhisk/ansible
 
