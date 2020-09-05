@@ -60,7 +60,7 @@ sudo ansible-playbook -i environments/distributed apigateway.yml
 sudo ansible-playbook -i environments/distributed routemgmt.yml
 
 # Hot swap invoker with type of 1 min idle
-sudo ansible-playbook -i environments/distributed invoker.yml -e docker_image_tag=invoker_idle_1min
+#sudo ansible-playbook -i environments/distributed invoker.yml -e docker_image_tag=invoker_idle_1min
 
 #
 # Configure wsk cli

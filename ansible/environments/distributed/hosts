@@ -5,7 +5,7 @@ ansible ansible_connection=local
 
 
 [edge]
-206.12.89.244        ansible_host=206.12.89.244		ansible_ssh_port=10213 
+206.12.89.244        ansible_host=206.12.89.244		ansible_port=10213 
 
 [apigateway:children]
 edge
@@ -14,24 +14,25 @@ edge
 edge
 
 [db]
-206.12.89.244       ansible_host=206.12.89.244 		ansible_ssh_port=10065 
+206.12.89.244       ansible_host=206.12.89.244 		ansible_port=10065 
 
 [controllers]
-controller0         ansible_host=206.12.89.244		ansible_ssh_port=10065 
+controller0         ansible_host=206.12.89.244		ansible_port=10065 
 
 [kafkas]
-kafka0              ansible_host=206.12.89.244		ansible_ssh_port=10065
+kafka0              ansible_host=206.12.89.244		ansible_port=10065
 
 [zookeepers:children]
 kafkas
 
 [invokers]
-invoker0            ansible_host=206.12.89.244		ansible_ssh_port=10167 
-invoker1            ansible_host=206.12.89.244 		ansible_ssh_port=10234 
+invoker0            ansible_host=206.12.89.244		ansible_port=10167 
+invoker1            ansible_host=206.12.89.244 		ansible_port=10234 
 
 
 [all:vars]
 ansible_connection=ssh
-ansible_user=ubuntu
+ansible_user=root
+ansible_ssh_pass=yhf3012523
 ansible_python_interpreter=/usr/bin/python
 
