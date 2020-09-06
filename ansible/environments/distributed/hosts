@@ -5,7 +5,7 @@ ansible ansible_connection=local
 
 
 [edge]
-206.12.89.244        ansible_host=206.12.89.244		ansible_port=10213 
+192.168.196.213     ansible_host=192.168.196.213 
 
 [apigateway:children]
 edge
@@ -14,20 +14,20 @@ edge
 edge
 
 [db]
-206.12.89.244       ansible_host=206.12.89.244 		ansible_port=10065 
+192.168.196.65      ansible_host=192.168.196.65 
 
 [controllers]
-controller0         ansible_host=206.12.89.244		ansible_port=10065 
+controller0         ansible_host=192.168.196.65
 
 [kafkas]
-kafka0              ansible_host=206.12.89.244		ansible_port=10065
+kafka0              ansible_host=192.168.196.65
 
 [zookeepers:children]
 kafkas
 
 [invokers]
-invoker0            ansible_host=206.12.89.244		ansible_port=10167 
-invoker1            ansible_host=206.12.89.244 		ansible_port=10234 
+invoker0            ansible_host=192.168.196.167 
+invoker1            ansible_host=192.168.196.234
 
 
 [all:vars]
