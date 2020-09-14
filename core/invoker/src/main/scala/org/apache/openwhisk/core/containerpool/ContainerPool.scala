@@ -62,6 +62,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                     poolConfig: ContainerPoolConfig)
     extends Actor {
   import ContainerPool.memoryConsumptionOf
+  import ContainerPool.cpuConsumptionOf
 
   implicit val logging = new AkkaLogging(context.system.log)
   implicit val ec = context.dispatcher
@@ -119,7 +120,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         }
         val createdContainer =
           // Is there enough space on the invoker for this action to be executed.
-          if (hasPoolSpaceFor(busyPool, r.action.limits.memory.megabytes.MB)) {
+          if (hasPoolSpaceFor(busyPool, MemoryLimit.decodeMemory(r.action.limits.memory.megabytes).MB, MemoryLimit.decodeCpu(r.action.limits.memory.megabytes))) {
             // Schedule a job to a warm container
             ContainerPool
               .schedule(r.action, r.msg.user.namespace.name, freePool)
@@ -128,7 +129,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                 // There was no warm/warming/warmingCold container. Try to take a prewarm container or a cold container.
 
                 // Is there enough space to create a new container or do other containers have to be removed?
-                if (hasPoolSpaceFor(busyPool ++ freePool, r.action.limits.memory.megabytes.MB)) {
+                if (hasPoolSpaceFor(busyPool ++ freePool, MemoryLimit.decodeMemory(r.action.limits.memory.megabytes).MB, MemoryLimit.decodeCpu(r.action.limits.memory.megabytes))) {
                   takePrewarmContainer(r.action)
                     .map(container => (container, "prewarmed"))
                     .orElse(Some(createContainer(r.action.limits.memory.megabytes.MB), "cold"))
@@ -137,7 +138,11 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                 // Remove a container and create a new one for the given job
                 ContainerPool
                 // Only free up the amount, that is really needed to free up
-                  .remove(freePool, Math.min(r.action.limits.memory.megabytes, memoryConsumptionOf(freePool)).MB)
+                  .remove(
+                    freePool, 
+                    Math.min(MemoryLimit.decodeMemory(r.action.limits.memory.megabytes), memoryConsumptionOf(freePool)).MB, 
+                    Math.min(MemoryLimit.decodeCpu(r.action.limits.memory.megabytes), cpuConsumptionOf(freePool))
+                  )
                   .map(removeContainer)
                   // If the list had at least one entry, enough containers were removed to start the new container. After
                   // removing the containers, we are not interested anymore in the containers that have been removed.
@@ -376,14 +381,18 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   }
 
   /**
-   * Calculate if there is enough free memory within a given pool.
+   * Calculate if there is enough free memory and cpu within a given pool.
    *
-   * @param pool The pool, that has to be checked, if there is enough free memory.
+   * @param pool The pool, that has to be checked, if there is enough free memory and cpu.
    * @param memory The amount of memory to check.
-   * @return true, if there is enough space for the given amount of memory.
+   * @param cpu The amount of cpu to check.
+   * @return true, if there is enough space for the given amount of memory and cpu.
    */
-  def hasPoolSpaceFor[A](pool: Map[A, ContainerData], memory: ByteSize): Boolean = {
-    memoryConsumptionOf(pool) + memory.toMB <= poolConfig.userMemory.toMB
+  def hasPoolSpaceFor[A](pool: Map[A, ContainerData], memory: ByteSize, cpu: Int): Boolean = {
+    val hasMemorySpace: Boolean = memoryConsumptionOf(pool) + memory.toMB <= poolConfig.userMemory.toMB
+    val hasCpuSpace: Boolean = cpuConsumptionOf(pool) + cpu <= MemoryLimit.USER_CPU
+
+    (hasMemorySpace && hasCpuSpace)
   }
 
   /**
@@ -419,7 +428,25 @@ object ContainerPool {
    * @return The memory consumption of all containers in the pool in Megabytes.
    */
   protected[containerpool] def memoryConsumptionOf[A](pool: Map[A, ContainerData]): Long = {
-    pool.map(_._2.memoryLimit.toMB).sum
+    var sum: Int = 0
+    pool.foreach(containerMap => 
+      sum = sum + MemoryLimit.decodeMemory(containerMap._2.memoryLimit.toMB.toInt)
+    )
+    sum.toLong
+  }
+
+  /**
+   * Calculate the cpu of a given pool.
+   *
+   * @param pool The pool with the containers.
+   * @return The cpu consumption of all containers in the pool in Megabytes.
+   */
+  protected[containerpool] def cpuConsumptionOf[A](pool: Map[A, ContainerData]): Int = {
+    var sum: Int = 0
+    pool.foreach(containerMap => 
+      sum = sum + MemoryLimit.decodeCpu(containerMap._2.memoryLimit.toMB.toInt)
+    )
+    sum
   }
 
   /**
@@ -473,6 +500,7 @@ object ContainerPool {
   @tailrec
   protected[containerpool] def remove[A](pool: Map[A, ContainerData],
                                          memory: ByteSize,
+                                         cpu: Int,
                                          toRemove: List[A] = List.empty): List[A] = {
     // Try to find a Free container that does NOT have any active activations AND is initialized with any OTHER action
     val freeContainers = pool.collect {
@@ -481,19 +509,20 @@ object ContainerPool {
         ref -> w
     }
 
-    if (memory > 0.B && freeContainers.nonEmpty && memoryConsumptionOf(freeContainers) >= memory.toMB) {
+    if (memory > 0.B && cpu > 0 && freeContainers.nonEmpty && memoryConsumptionOf(freeContainers) >= memory.toMB && cpuConsumptionOf(freeContainers) >= cpu) {
       // Remove the oldest container if:
-      // - there is more memory required
+      // - there is more memory/cpu required
       // - there are still containers that can be removed
       // - there are enough free containers that can be removed
       val (ref, data) = freeContainers.minBy(_._2.lastUsed)
-      // Catch exception if remaining memory will be negative
-      val remainingMemory = Try(memory - data.memoryLimit).getOrElse(0.B)
-      remove(freeContainers - ref, remainingMemory, toRemove ++ List(ref))
+      // Catch exception if remaining memory/cpu will be negative
+      val remainingMemory = Try(memory - MemoryLimit.decodeMemory(data.memoryLimit.toMB.toInt).MB).getOrElse(0.B)
+      val remainingCpu = Try(cpu - MemoryLimit.decodeCpu(data.memoryLimit.toMB.toInt)).getOrElse(0)
+      remove(freeContainers - ref, remainingMemory, remainingCpu, toRemove ++ List(ref))
     } else {
-      // If this is the first call: All containers are in use currently, or there is more memory needed than
+      // If this is the first call: All containers are in use currently, or there is more memory/cpu needed than
       // containers can be removed.
-      // Or, if this is one of the recursions: Enough containers are found to get the memory, that is
+      // Or, if this is one of the recursions: Enough containers are found to get the memory/cpu, that is
       // necessary. -> Abort recursion
       toRemove
     }

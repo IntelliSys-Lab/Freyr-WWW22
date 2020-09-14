@@ -280,13 +280,16 @@ class ContainerProxy(factory: (TransactionId,
   when(Uninitialized) {
     // pre warm a container (creates a stem cell container)
     case Event(job: Start, _) =>
+      val memory = MemoryLimit.decodeMemory(job.memoryLimit.toMB.toInt)
+      val cpu = MemoryLimit.decodeCpu(job.memoryLimit.toMB.toInt)
+
       factory(
         TransactionId.invokerWarmup,
         ContainerProxy.containerName(instance, "prewarm", job.exec.kind),
         job.exec.image,
         job.exec.pull,
-        job.memoryLimit,
-        poolConfig.cpuShare(job.memoryLimit),
+        memory.MB,
+        cpu,
         None)
         .map(container => PreWarmCompleted(PreWarmedData(container, job.exec.kind, job.memoryLimit)))
         .pipeTo(self)
@@ -295,6 +298,9 @@ class ContainerProxy(factory: (TransactionId,
 
     // cold start (no container to reuse or available stem cell container)
     case Event(job: Run, _) =>
+      val memory = MemoryLimit.decodeMemory(job.action.limits.memory.megabytes)
+      val cpu = MemoryLimit.decodeCpu(job.action.limits.memory.megabytes)
+
       implicit val transid = job.msg.transid
       activeCount += 1
       // create a new container
@@ -303,8 +309,8 @@ class ContainerProxy(factory: (TransactionId,
         ContainerProxy.containerName(instance, job.msg.user.namespace.name.asString, job.action.name.asString),
         job.action.exec.image,
         job.action.exec.pull,
-        job.action.limits.memory.megabytes.MB,
-        poolConfig.cpuShare(job.action.limits.memory.megabytes.MB),
+        memory.MB,
+        cpu,
         Some(job.action))
 
       // container factory will either yield a new container ready to execute the action, or

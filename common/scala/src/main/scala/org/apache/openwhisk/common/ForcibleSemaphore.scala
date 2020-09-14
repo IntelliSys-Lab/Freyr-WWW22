@@ -34,8 +34,8 @@ import scala.annotation.tailrec
  *
  * @param maxAllowed maximum number of permits given away by `tryAcquire`
  */
-class ForcibleSemaphore(maxAllowed: Int) {
-  class Sync extends AbstractQueuedSynchronizer {
+class ForcibleSemaphore(maxAllowedMemory: Int, maxAllowedCpu: Int) {
+  class Sync(maxAllowed: Int) extends AbstractQueuedSynchronizer {
     setState(maxAllowed)
 
     def permits: Int = getState
@@ -84,7 +84,8 @@ class ForcibleSemaphore(maxAllowed: Int) {
     }
   }
 
-  private val sync = new Sync
+  private val syncMemory = new Sync(maxAllowedMemory)
+  private val syncCpu = new Sync(maxAllowedCpu)
 
   /**
    * Acquires the given numbers of permits.
@@ -92,9 +93,11 @@ class ForcibleSemaphore(maxAllowed: Int) {
    * @param acquires the number of permits to get
    * @return `true`, iff the internal semaphore's number of permits is positive, `false` if negative
    */
-  def tryAcquire(acquires: Int = 1): Boolean = {
-    require(acquires > 0, "cannot acquire negative or no permits")
-    sync.nonFairTryAcquireShared(acquires) >= 0
+  def tryAcquire(acquiresMemory: Int = 1, acquiresCpu: Int = 1): Boolean = {
+    require(acquiresMemory > 0, "cannot acquire negative or no permits")
+    require(acquiresCpu > 0, "cannot acquire negative or no permits")
+    syncMemory.nonFairTryAcquireShared(acquiresMemory) >= 0
+    syncCpu.nonFairTryAcquireShared(acquiresCpu) >= 0
   }
 
   /**
@@ -104,9 +107,11 @@ class ForcibleSemaphore(maxAllowed: Int) {
    *
    * @param acquires the number of permits to get
    */
-  def forceAcquire(acquires: Int = 1): Unit = {
-    require(acquires > 0, "cannot force acquire negative or no permits")
-    sync.forceAquireShared(acquires)
+  def forceAcquire(acquiresMemory: Int = 1, acquiresCpu: Int = 1): Unit = {
+    require(acquiresMemory > 0, "cannot acquire negative or no permits")
+    require(acquiresCpu > 0, "cannot acquire negative or no permits")
+    syncMemory.forceAquireShared(acquiresMemory)
+    syncCpu.forceAquireShared(acquiresCpu)
   }
 
   /**
@@ -114,11 +119,16 @@ class ForcibleSemaphore(maxAllowed: Int) {
    *
    * @param acquires the number of permits to release
    */
-  def release(acquires: Int = 1): Unit = {
-    require(acquires > 0, "cannot release negative or no permits")
-    sync.releaseShared(acquires)
+  def release(acquiresMemory: Int = 1, acquiresCpu: Int = 1): Unit = {
+    require(acquiresMemory > 0, "cannot release negative or no permits")
+    require(acquiresCpu > 0, "cannot release negative or no permits")
+    syncMemory.releaseShared(acquiresMemory)
+    syncCpu.releaseShared(acquiresCpu)
   }
 
-  /** Returns the number of currently available permits. Possibly negative. */
-  def availablePermits: Int = sync.permits
+  /** Returns the number of currently memory available permits. Possibly negative. */
+  def availableMemoryPermits: Int = syncMemory.permits
+
+  /** Returns the number of currently cpu available permits. Possibly negative. */
+  def availableCpuPermits: Int = syncCpu.permits
 }
