@@ -50,7 +50,7 @@ protected[core] object MemoryLimit extends ArgNormalizer[MemoryLimit] {
   val STD_CPU: Int = 256
 
   // Extract memory limit from input 
-  def decodeMemory(input: Int): Int = input / 15 * 64 + 128
+  def decodeMemory(input: Int): Int = (input - 1) / 15 * 64 + 128
 
   // Extract cpu limit from input 
   def decodeCpu(input: Int): Int = (input - 1) % 15 * 64 + 128
