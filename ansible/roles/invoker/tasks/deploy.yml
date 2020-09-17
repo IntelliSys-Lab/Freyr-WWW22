@@ -395,3 +395,6 @@
   retries: 12
   delay: 5
   when: not lean
+
+- name: start script for monitoring container number
+  shell: "/usr/bin/python /home/ubuntu/openwhisk/ansible/roles/invoker/scripts/monitor_container_number.py {{ groups['redis'] | first }} {{ redis.port }} {{ redis.password }} &"
