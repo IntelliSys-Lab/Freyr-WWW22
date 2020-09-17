@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 import os
 import sys
 import socket
@@ -6,9 +8,9 @@ import redis
 
 
 # Connect to redis pool
-host = sys.argv[1]
-port = sys.argv[2]
-password = sys.argv[3]
+host = "192.168.196.213"
+port = 6379
+password = "openwhisk"
 
 pool = redis.ConnectionPool(host=host, port=port, password=password, decode_responses=True)
 r = redis.Redis(connection_pool=pool)
