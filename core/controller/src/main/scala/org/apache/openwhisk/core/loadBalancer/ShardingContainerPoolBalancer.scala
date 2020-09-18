@@ -20,6 +20,7 @@ package org.apache.openwhisk.core.loadBalancer
 import akka.actor.ActorRef
 import akka.actor.ActorRefFactory
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent._
 
 import akka.actor.{Actor, ActorSystem, Cancellable, Props}
 import akka.cluster.ClusterEvent._
@@ -43,6 +44,7 @@ import org.apache.openwhisk.spi.SpiLoader
 import scala.annotation.tailrec
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Success
 
 /**
  * A loadbalancer that schedules workload based on a hashing-algorithm.
@@ -206,6 +208,47 @@ class ShardingContainerPoolBalancer(
 
   /** State needed for scheduling. */
   val schedulingState = ShardingContainerPoolBalancerState()(lbConfig)
+
+  //
+  // Redis client
+  //
+  class RedisThread(
+    redisHost: String, 
+    redisPort: Int, 
+    redisPassword: String, 
+  ) extends Thread {
+    private val redisClient = new RedisClient(redisHost, redisPort, redisPassword)
+    redisClient.init
+    
+    override def run(){  
+      while (true) {
+        Thread.sleep(500)
+        val permits = schedulingState.invokerSlots
+
+        // Update available memory and cpu for each invoker
+        var i: Int = 0
+        for (i <- 0 until permits.length) {
+          val invoker: String = "invoker" + i.toString
+          redisClient.setAvailableMemory(invoker, permits(i).availableMemoryPermits)
+          redisClient.setAvailableCpu(invoker, permits(i).availableCpuPermits)
+        }
+
+        // Update total number of undone requests
+        totalActiveActivations onComplete { 
+          case Success(result) => redisClient.setUndoneRequestNumber(result)
+          case _ => // Ignore
+        }
+      }
+    }
+  }
+
+  val redisHost: String = "192.168.196.213"
+  val redisPort: Int = 6379
+  val redisPassword: String = "openwhisk"
+
+  // Start monitoring states
+  val redisThread = new RedisThread(redisHost, redisPort, redisPassword)
+  redisThread.start()
 
   /**
    * Monitors invoker supervision and the cluster to update the state sequentially
