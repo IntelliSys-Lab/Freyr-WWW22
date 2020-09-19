@@ -300,7 +300,7 @@ class LambdaRM():
         timeout_num_trend = []
         loss_trend = []
         
-        # Start random provision
+        # Start training
         for episode in range(max_episode):
             observation = self.reset()
             pg_agent.reset()
