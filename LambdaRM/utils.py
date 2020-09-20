@@ -1,8 +1,27 @@
-import os
+import subprocess
 import numpy as np
 import copy as cp
+from params import WSK_CLI
 
 
+#
+# Function utilities
+# 
+
+def run_cmd(cmd):
+    pong = subprocess.Popen(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    result = pong.stdout.read().decode().replace('\n', '')
+
+    return result
+
+#
+# Class utilities
+#
 
 class Function():
     """
@@ -20,6 +39,9 @@ class Function():
         self.cpu = cpu
         self.memory = memory
 
+    def set_invoke_params(self, params):
+        self.params.invoke_params = params
+
     def put_request(self, request):
         self.request_history.append(request)
 
@@ -29,10 +51,10 @@ class Function():
     def get_request_history(self):
         return self.request_history
 
-    def try_update_request_history(self, system_time):
+    def try_update_request_history(self, system_runtime):
         for request in self.request_history:
             if request.get_is_done() is False:
-                if request.check_if_done(system_time) is True:
+                if request.check_if_done(system_runtime) is True:
                     request.update()
     
     def get_cpu(self):
@@ -41,11 +63,11 @@ class Function():
     def get_memory(self):
         return self.memory
 
-    def get_avg_interval(self, system_time):
-        if system_time == 0:
+    def get_avg_interval(self, system_runtime):
+        if system_runtime == 0:
             avg_interval = 0
         else:
-            avg_interval = len(self.request_history) / system_time
+            avg_interval = len(self.request_history) / system_runtime
         
         return avg_interval
 
@@ -66,7 +88,11 @@ class Function():
         return avg_completion_time
     
     def get_is_cold_start(self):
-        is_cold_start = self.request_history[-1].get_is_cold_start()
+        if len(self.request_history) == 0:
+            is_cold_start = True
+        else:
+            is_cold_start = self.request_history[-1].get_is_cold_start()
+
         if is_cold_start is True:
             return 1
         else:
@@ -127,11 +153,18 @@ class Function():
         return openwhisk_input
 
     def update_openwhisk(self):
-        os.system('wsk action update {} --memory {}'.format(self.function_id, self.translate_to_openwhisk()))
+        cmd = '{} action update {} --memory {}'.format(WSK_CLI, self.function_id, self.translate_to_openwhisk())
+        run_cmd(cmd)
 
-    def invoke_openwhisk(self):
-        request_id = os.popen('wsk action invoke {} | awk {}'.format(self.function_id, "{'print $6'}")).read().replace('\n', '')
-        request = Request(self.function_id, request_id)
+    def invoke_openwhisk(self, system_runtime):
+        cmd = ""
+        if self.params.invoke_params == None:
+            cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_id, "{'print $6'}")
+        else:
+            cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_id, self.params.invoke_params, "{'print $6'}")
+        
+        request_id = str(run_cmd(cmd))
+        request = Request(self.function_id, request_id, system_runtime)
         self.put_request(request)
 
     def reset_resource_adjust_direction(self):
@@ -145,41 +178,46 @@ class Request():
     """
     An invocation of a function
     """
-    def __init__(self, function_id, request_id):
+    def __init__(self, function_id, request_id, invoke_time):
         self.function_id = function_id
         self.request_id = request_id
         self.is_done = False
         self.done_time = 0
+        self.invoke_time = 0
 
         self.completion_time = 0
         self.is_timeout = False
         self.is_cold_start = False
+
+    def check_if_done(self, system_runtime):
+        cmd = '{} activation get {}'.format(WSK_CLI, self.request_id)
+        result = str(run_cmd(cmd))
         
-    def check_if_done(self, system_time):
-        result = os.popen('wsk activation get {}'.format(self.request_id)).read().replace('\n', '')
-        
-        if "error" in result:
+        if "ok:" not in result:
             self.is_done = False
             return False
         else:
             self.is_done = True
-            self.done_time = system_time
+            self.done_time = system_runtime
             return True
 
     def update(self):
         # Get completion time
-        duration = os.popen('wsk activation get {} | grep -v "ok" | jq .duration'.format(self.request_id)).read().replace('\n', '')
-        self.completion_time = int(duration)
+        cmd = '{} activation get {} | grep -v "ok" | jq .duration'.format(WSK_CLI, self.request_id)
+        duration = int(run_cmd(cmd))
+        self.completion_time = duration / 1000 # Second
         
         # Get timeout
-        timeout = os.popen('wsk activation get {} | grep -v "ok" | jq .annotations[3].value'.format(self.request_id)).read().replace('\n', '')
+        cmd = '{} activation get {} | grep -v "ok" | jq .annotations[3].value'.format(WSK_CLI, self.request_id)
+        timeout = str(run_cmd(cmd))
         if timeout == "false":
             self.is_timeout = False
         else:
             self.is_timeout = True
         
         # Get cold start
-        initTime = os.popen('wsk activation get {} | grep -v "ok" | jq .annotations[5]'.format(self.request_id)).read().replace('\n', '')
+        cmd = '{} activation get {} | grep -v "ok" | jq .annotations[5]'.format(WSK_CLI, self.request_id)
+        initTime = str(run_cmd(cmd))
         if initTime == "null":
             self.is_cold_start = False
         else:
@@ -187,6 +225,9 @@ class Request():
 
     def get_is_done(self):
         return self.is_done
+
+    def get_invoke_time(self):
+        return self.invoke_time
 
     def get_done_time(self):
         return self.done_time
@@ -212,7 +253,13 @@ class Profile():
         
     def put_function(self, function):
         self.function_profile.append(function)
-        
+    
+    def get_size(self):
+        return len(self.function_profile)
+
+    def get_function_profile(self):
+        return self.function_profile
+
     def reset(self):
         self.function_profile = cp.deepcopy(self.default_function_profile)
         

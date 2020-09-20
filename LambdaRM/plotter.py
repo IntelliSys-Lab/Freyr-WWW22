@@ -8,7 +8,7 @@ class Plotter():
     """
     def __init__(
         self,
-        fig_path=os.path.dirname(os.getcwd())+"/serverless/figures/"
+        fig_path=os.path.dirname(os.getcwd())+"/LambdaRM/figures/"
     ):
         self.fig_path = fig_path
     
@@ -16,10 +16,10 @@ class Plotter():
         self,
         prefix_name,
         reward_trend, 
-        avg_slow_down_trend=None, 
         avg_completion_time_trend,
         timeout_num_trend,
-        loss_trend=None
+        loss_trend=None,
+        avg_slow_down_trend=None,
     ):
         fig_1 = plt.figure('Total Reward Trend', figsize=(6,4)).add_subplot(111)
         fig_1.plot(reward_trend)
@@ -60,10 +60,10 @@ class Plotter():
     def plot_show(
         self,
         reward_trend, 
-        avg_slow_down_trend=None, 
         avg_completion_time_trend,
         timeout_num_trend,
-        loss_trend=None
+        loss_trend=None,
+        avg_slow_down_trend=None
     ):
         fig_1 = plt.figure('Total Reward Trend', figsize=(6,4)).add_subplot(111)
         fig_1.plot(reward_trend)

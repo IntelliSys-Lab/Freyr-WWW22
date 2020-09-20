@@ -1,31 +1,13 @@
-import numpy as np
+#
+# Global variables
+#
 
-
-class EnvParameters():
-    """
-    Parameters used for generating FaaSEnv
-    """
-    def __init__(
-        self,
-        cpu_total=32*100,
-        memory_total=45*100,
-        cpu_cap_per_function=32,
-        memory_cap_per_function=45,
-        reward_type="slowdown",
-        interval=1,
-        decay_factor=1,
-        timeout_penalty=600
-    ):
-        self.cpu_total = cpu_total
-        self.memory_total = memory_total
-        self.cpu_cap_per_function = cpu_cap_per_function
-        self.memory_cap_per_function = memory_cap_per_function
-        self.reward_type = reward_type
-        self.interval = interval
-        self.decay_factor = decay_factor
-        self.timeout_penalty = timeout_penalty
-
+WSK_CLI = "/home/ubuntu/openwhisk/bin/wsk -i"
         
+#
+# Parameter classes
+#
+
 class FunctionParameters():
     """
     Parameters used for generating Function
@@ -36,13 +18,15 @@ class FunctionParameters():
         memory_cap=15,
         cpu_least_hint=1,
         memory_least_hint=1,
-        function_id=None
+        function_id=None,
+        invoke_params=None
     ):
         self.cpu_cap = cpu_cap
         self.memory_cap = memory_cap
         self.cpu_least_hint = cpu_least_hint
         self.memory_least_hint = memory_least_hint
         self.function_id = function_id
+        self.invoke_params = invoke_params
 
 class TimetableParameters():
     """

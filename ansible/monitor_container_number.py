@@ -21,7 +21,7 @@ invoker = os.popen(
 
 # Monitor alive container number
 while True:
-    time.sleep(0.5)
+    time.sleep(0.2)
     n_container = os.popen('docker ps | grep "guest" | wc -l').read().replace('\n', '')
     r.hset(invoker, "n_container", n_container)
     

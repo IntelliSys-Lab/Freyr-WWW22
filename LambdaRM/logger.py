@@ -9,7 +9,7 @@ class Logger():
     def __init__(
         self, 
         file_name, 
-        log_path=os.path.dirname(os.getcwd())+'/serverless/logs/'
+        log_path=os.path.dirname(os.getcwd())+'/LambdaRM/logs/'
     ):
         self.file_name = file_name
         self.log_path = log_path

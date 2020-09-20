@@ -1,0 +1,5 @@
+FunctionId,SampleCount,AverageAllocatedMb,AverageAllocatedMb_pct1,AverageAllocatedMb_pct5,AverageAllocatedMb_pct25,AverageAllocatedMb_pct50,AverageAllocatedMb_pct75,AverageAllocatedMb_pct95,AverageAllocatedMb_pct99,AverageAllocatedMb_pct100
+function0,21897,178,164,168,174,177,184,194,211,322
+function1,17149,723,161,187,297,931,996,1101,1181,1413
+function2,78813,306,209,232,289,310,331,356,371,404
+function3,41597,480,170,177,449,494,603,694,742,755

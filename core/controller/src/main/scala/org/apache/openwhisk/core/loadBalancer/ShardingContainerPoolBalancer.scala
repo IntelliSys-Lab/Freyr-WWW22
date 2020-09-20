@@ -222,7 +222,7 @@ class ShardingContainerPoolBalancer(
     
     override def run(){  
       while (true) {
-        Thread.sleep(500)
+        Thread.sleep(200)
         val permits = schedulingState.invokerSlots
 
         // Update available memory and cpu for each invoker
