@@ -16,7 +16,7 @@ r = redis.Redis(connection_pool=pool)
 invoker_hostname = socket.gethostname()
 invoker_ip = socket.gethostbyname(invoker_hostname)
 invoker = os.popen(
-    'cat environments/distributed/hosts | grep "invoker" | grep "{}" | awk {}'.format(invoker_ip, "{'print $1'}")
+    'cat ../ansible/environments/distributed/hosts | grep "invoker" | grep "{}" | awk {}'.format(invoker_ip, "{'print $1'}")
 ).read().replace('\n', '')
 
 # Monitor alive container number
