@@ -386,26 +386,26 @@ class LambdaRM():
             reward = 0
         else: # Time starts proceeding
             interval = self.system_time.step()
-            # print("system_step: {}, system_runtime: {}".format(self.system_time.get_system_step(), self.system_time.get_system_runtime()))
+            print("system_step: {}, system_runtime: {}".format(self.system_time.get_system_step(), self.system_time.get_system_runtime()))
             
             # Update functions on OpenWhisk
-            # before_update = time.time()
+            before_update = time.time()
             self.update_openwhisk()
-            # after_update = time.time()
-            # print("Update overhead: {}".format(after_update - before_update))
+            after_update = time.time()
+            print("Update overhead: {}".format(after_update - before_update))
 
             # Invoke functions according to timetable
-            # before_invoke = time.time()
+            before_invoke = time.time()
             self.invoke_openwhisk()
-            # after_invoke = time.time()
-            # print("Invoke overhead: {}".format(after_invoke - before_invoke))
+            after_invoke = time.time()
+            print("Invoke overhead: {}".format(after_invoke - before_invoke))
 
             # Try to update undone requests
-            # before_try = time.time()
+            before_try = time.time()
             self.try_update_request_history()
-            # after_try = time.time()
-            # print("Try overhead: {}".format(after_try - before_try))
-            # print("")
+            after_try = time.time()
+            print("Try overhead: {}".format(after_try - before_try))
+            print("")
 
             # Get observation for next state
             observation = self.get_observation() 
