@@ -1,6 +1,9 @@
+import time
 import subprocess
+import multiprocessing
 import numpy as np
 import copy as cp
+import json
 from params import WSK_CLI
 
 
@@ -51,12 +54,6 @@ class Function():
     def get_request_history(self):
         return self.request_history
 
-    def try_update_request_history(self, system_runtime):
-        for request in self.request_history:
-            if request.get_is_done() is False:
-                if request.check_if_done(system_runtime) is True:
-                    request.update()
-    
     def get_cpu(self):
         return self.cpu
 
@@ -76,7 +73,7 @@ class Function():
         total_completion_time = 0
 
         for request in self.request_history:
-            if request.get_is_done() is True:
+            if request.get_is_done() is True and request.get_is_timeout() is False:
                 request_num = request_num + 1
                 total_completion_time = total_completion_time + request.get_completion_time()
         
@@ -149,23 +146,25 @@ class Function():
                 return False
     
     def translate_to_openwhisk(self):
-        openwhisk_input = (self.cpu - 1) * 15 + self.memory
+        openwhisk_input = (self.cpu - 1) * 9 + self.memory
         return openwhisk_input
 
-    def update_openwhisk(self):
-        cmd = '{} action update {} --memory {}'.format(WSK_CLI, self.function_id, self.translate_to_openwhisk())
-        run_cmd(cmd)
+    # Multiprocessing
+    def update_openwhisk(self, couch_client):
+        couch_whisks = couch_client["whisk_distributed_whisks"]
+        doc_function = couch_whisks["guest/{}".format(self.function_id)]
+        doc_function["limits"]["memory"] = self.translate_to_openwhisk()
+        couch_whisks.save(doc_function)
 
-    def invoke_openwhisk(self, system_runtime):
-        cmd = ""
+    # Multiprocessing
+    def invoke_openwhisk(self, result_dict):
         if self.params.invoke_params == None:
             cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_id, "{'print $6'}")
         else:
             cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_id, self.params.invoke_params, "{'print $6'}")
         
         request_id = str(run_cmd(cmd))
-        request = Request(self.function_id, request_id, system_runtime)
-        self.put_request(request)
+        result_dict[self.function_id].append(request_id)
 
     def reset_resource_adjust_direction(self):
         self.resource_adjust_direction = [0, 0]
@@ -183,45 +182,56 @@ class Request():
         self.request_id = request_id
         self.is_done = False
         self.done_time = 0
-        self.invoke_time = 0
+        self.invoke_time = invoke_time
 
         self.completion_time = 0
         self.is_timeout = False
         self.is_cold_start = False
 
-    def check_if_done(self, system_runtime):
-        cmd = '{} activation get {}'.format(WSK_CLI, self.request_id)
-        result = str(run_cmd(cmd))
-        
-        if "ok:" not in result:
-            self.is_done = False
-            return False
-        else:
-            self.is_done = True
-            self.done_time = system_runtime
-            return True
+    # Multiprocessing
+    def try_update(self, result_dict, system_runtime, couch_client):
+        couch_activations = couch_client["whisk_distributed_activations"]
+        doc_request = couch_activations.get("guest/{}".format(self.request_id))
 
-    def update(self):
-        # Get completion time
-        cmd = '{} activation get {} | grep -v "ok" | jq .duration'.format(WSK_CLI, self.request_id)
-        duration = int(run_cmd(cmd))
-        self.completion_time = duration / 1000 # Second
-        
-        # Get timeout
-        cmd = '{} activation get {} | grep -v "ok" | jq .annotations[3].value'.format(WSK_CLI, self.request_id)
-        timeout = str(run_cmd(cmd))
-        if timeout == "false":
-            self.is_timeout = False
+        if doc_request is not None and len(doc_request["annotations"]) >= 5:
+            result_dict[self.function_id][self.request_id]["is_done"] = True
+            result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"]
+            result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
+            
+            if len(doc_request["annotations"]) == 6:
+                result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+            else:
+                result_dict[self.function_id][self.request_id]["is_cold_start"] = False
         else:
-            self.is_timeout = True
+            # Manually rule out timeout requests
+            if system_runtime - self.invoke_time > 60:
+                result_dict[self.function_id][self.request_id]["is_done"] = True
+                result_dict[self.function_id][self.request_id]["is_timeout"] = True
+            else:
+                result_dict[self.function_id][self.request_id]["is_done"] = False
+
+    def set_updates(
+        self, 
+        is_done, 
+        done_time, 
+        is_timeout, 
+        completion_time=None, 
+        is_cold_start=None
+    ):
+        self.is_done = is_done
+        self.done_time = done_time
+        self.is_timeout = is_timeout
         
-        # Get cold start
-        cmd = '{} activation get {} | grep -v "ok" | jq .annotations[5]'.format(WSK_CLI, self.request_id)
-        initTime = str(run_cmd(cmd))
-        if initTime == "null":
-            self.is_cold_start = False
-        else:
-            self.is_cold_start = True
+        if is_timeout is False and completion_time is not None:
+            self.completion_time = completion_time
+        if is_timeout is False and is_cold_start is not None:
+            self.is_cold_start = is_cold_start
+
+    def get_function_id(self):
+        return self.function_id
+
+    def get_request_id(self):
+        return self.request_id
 
     def get_is_done(self):
         return self.is_done
@@ -285,3 +295,35 @@ class Timetable():
     def get_size(self):
         return self.size
     
+
+class SystemTime():
+    """
+    Time module for LambdaRM 
+    """
+    
+    def __init__(self):
+        self.system_up_time = time.time()
+        self.system_runtime = 0
+        self.system_step = 0
+
+    def get_system_up_time(self):
+        return self.system_up_time
+
+    def get_system_runtime(self):
+        return self.system_runtime
+
+    def get_system_step(self):
+        return self.system_step
+
+    def step(self):
+        current_time = time.time()
+        interval = current_time - (self.system_up_time + self.system_runtime)
+        self.system_runtime = current_time - self.system_up_time
+        self.system_step = self.system_step + 1
+
+        return interval
+
+    def reset(self):
+        self.system_up_time = time.time()
+        self.system_runtime = 0
+        self.system_step = 0

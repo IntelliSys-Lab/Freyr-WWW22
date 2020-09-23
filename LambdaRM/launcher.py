@@ -25,9 +25,15 @@ def launch():
         redis_host="192.168.196.213",
         redis_port=6379,
         redis_password="openwhisk",
+        couch_protocol = "http",
+        couch_user = "whisk_admin",
+        couch_password = "some_passw0rd",
+        couch_host = "192.168.196.65",
+        couch_port = "5984",
         n_invoker=2,
+        keep_alive_window=60,
         timeout_limit=60,
-        decay_factor=0.8,
+        decay_factor=0.9,
         reward_type="completion_time_decay",
         profile=profile,
         timetable=timetable,
@@ -37,17 +43,24 @@ def launch():
     max_episode = 100
     
     # Fixed RM
-    # lambda_rm.fixed_rm(
-    #     max_episode=1,
-    #     plot_prefix_name="FixedRM" + file_suffix,
-    #     save_plot=True,
-    #     show_plot=False
-    # )
+    lambda_rm.fixed_rm(
+        max_episode=10,
+        plot_prefix_name="FixedRM" + file_suffix,
+        save_plot=True,
+        show_plot=False
+    )
+
+    # Greedy RM
+    lambda_rm.greedy_rm(
+        max_episode=10,
+        plot_prefix_name="GreedyRM" + file_suffix,
+        save_plot=True,
+        show_plot=False
+    )
 
     # Start training
     lambda_rm.train(
-        max_episode=1,
-        keep_alive_window=60,
+        max_episode=max_episode,
         plot_prefix_name="LambdaRM" + file_suffix,
         save_plot=True,
         show_plot=False

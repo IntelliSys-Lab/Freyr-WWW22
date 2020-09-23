@@ -1778,7 +1778,7 @@
           "type": "integer",
           "format": "int32",
           "description": "memory in megabytes",
-          "default": 33
+          "default": 1
         },
         "logs": {
           "type": "integer",

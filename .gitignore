@@ -101,3 +101,4 @@ core/routemgmt/getApi/utils.js
 # LambdaRM
 LambdaRM/logs/*
 LambdaRM/figures/*
+nohup.out

@@ -61,7 +61,7 @@ class WorkflowGenerator():
 
         # Create timetable based on invocation traces
         timetable_params = TimetableParameters(
-            max_timestep=200, 
+            max_timestep=100, 
             distribution_type="azure",
             azure_invocation_traces=invocation_traces
         )
@@ -75,13 +75,13 @@ class WorkflowGenerator():
         # Hardcoded functions
         for param in function_params:
             if param.function_id == "function0":
-                param.invoke_params = "-p threads 2 -p calcs 1000000 -p sleep 0 -p loops 2 -p arraySize 500000"
+                param.invoke_params = "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"
             elif param.function_id == "function1":
-                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
+                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 100000_Sales_Records.csv"
             elif param.function_id == "function2":
-                param.invoke_params = "-p threads 2 -p calcs 200000 -p sleep 0 -p loops 2 -p arraySize 200000"
+                param.invoke_params = "-p threads 2 -p calcs 200000 -p sleep 0 -p loops 2 -p arraySize 100000"
             elif param.function_id == "function3":
-                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
+                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 100000_Sales_Records.csv"
             
             function = Function(param)
             function.set_function(
