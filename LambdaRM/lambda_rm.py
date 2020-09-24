@@ -1,6 +1,5 @@
 import time
 import redis
-import couchdb
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
@@ -60,15 +59,13 @@ class LambdaRM():
         )
         self.redis_client = redis.Redis(connection_pool=self.pool)
 
-        # Set up CouchDB client
-        self.couch_client = couchdb.Server(
-            "{}://{}:{}@{}:{}/".format(
-                couch_protocol, couch_user, couch_password, couch_host, couch_port
-            )
+        # Define CouchDB link
+        self.couch_link = "{}://{}:{}@{}:{}/".format(
+            couch_protocol, couch_user, couch_password, couch_host, couch_port
         )
 
         # Time module
-        self.system_time = SystemTime()
+        self.system_time = SystemTime(1)
 
     #
     # Interfaces with OpenWhisk
@@ -123,7 +120,7 @@ class LambdaRM():
         for function in self.profile.function_profile:
             p = multiprocessing.Process(
                 target=function.update_openwhisk,
-                args=(self.couch_client,)
+                args=(self.couch_link,)
             )
             jobs.append(p)
             p.start()
@@ -179,7 +176,11 @@ class LambdaRM():
                 if request.get_is_done() is False:
                     p = multiprocessing.Process(
                         target=request.try_update,
-                        args=(result_dict, self.system_time.get_system_runtime(), self.couch_client)
+                        args=(
+                            result_dict, 
+                            self.system_time.get_system_runtime(), 
+                            self.couch_link
+                        )
                     )
                     jobs.append(p)
                     p.start()
@@ -386,7 +387,12 @@ class LambdaRM():
             reward = 0
         else: # Time starts proceeding
             interval = self.system_time.step()
-            print("system_step: {}, system_runtime: {}".format(self.system_time.get_system_step(), self.system_time.get_system_runtime()))
+            print("system_step: {}, system_runtime: {}, interval: {}".format(
+                self.system_time.get_system_step(), 
+                self.system_time.get_system_runtime(), 
+                interval
+                )
+            )
             
             # Update functions on OpenWhisk
             before_update = time.time()

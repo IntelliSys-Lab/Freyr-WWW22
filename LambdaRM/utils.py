@@ -1,6 +1,7 @@
 import time
 import subprocess
 import multiprocessing
+import couchdb
 import numpy as np
 import copy as cp
 import json
@@ -150,7 +151,8 @@ class Function():
         return openwhisk_input
 
     # Multiprocessing
-    def update_openwhisk(self, couch_client):
+    def update_openwhisk(self, couch_link):
+        couch_client = couchdb.Server(couch_link)
         couch_whisks = couch_client["whisk_distributed_whisks"]
         doc_function = couch_whisks["guest/{}".format(self.function_id)]
         doc_function["limits"]["memory"] = self.translate_to_openwhisk()
@@ -189,7 +191,8 @@ class Request():
         self.is_cold_start = False
 
     # Multiprocessing
-    def try_update(self, result_dict, system_runtime, couch_client):
+    def try_update(self, result_dict, system_runtime, couch_link):
+        couch_client = couchdb.Server(couch_link)
         couch_activations = couch_client["whisk_distributed_activations"]
         doc_request = couch_activations.get("guest/{}".format(self.request_id))
 
@@ -301,10 +304,12 @@ class SystemTime():
     Time module for LambdaRM 
     """
     
-    def __init__(self):
+    def __init__(self, interval_limit=None):
         self.system_up_time = time.time()
         self.system_runtime = 0
         self.system_step = 0
+
+        self.interval_limit = interval_limit
 
     def get_system_up_time(self):
         return self.system_up_time
@@ -318,6 +323,14 @@ class SystemTime():
     def step(self):
         current_time = time.time()
         interval = current_time - (self.system_up_time + self.system_runtime)
+
+        if self.interval_limit is not None:
+            # Interval must exceed limit to keep invokers healthy
+            if self.system_step > 1 and interval < self.interval_limit:
+                while interval < self.interval_limit:
+                    current_time = time.time()
+                    interval = current_time - (self.system_up_time + self.system_runtime)
+
         self.system_runtime = current_time - self.system_up_time
         self.system_step = self.system_step + 1
 

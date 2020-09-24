@@ -29,18 +29,18 @@ class WorkflowGenerator():
             for _, row in memory_traces.iterrows():
                 if row["FunctionId"] == function_id:
                     if row["AverageAllocatedMb"] < 256:
-                        function_params_dict[function_id]["memory_least_hint"] = 3
-                        function_params_dict[function_id]["cpu_least_hint"] = 3
-                    elif row["AverageAllocatedMb"] > 1024:
-                        function_params_dict[function_id]["memory_least_hint"] = 15
-                        function_params_dict[function_id]["cpu_least_hint"] = 15
+                        function_params_dict[function_id]["memory_least_hint"] = 1
+                        function_params_dict[function_id]["cpu_least_hint"] = 1
+                    elif row["AverageAllocatedMb"] > 2304:
+                        function_params_dict[function_id]["memory_least_hint"] = 9
+                        function_params_dict[function_id]["cpu_least_hint"] = 9
                     else:
-                        least_hint = int(row["AverageAllocatedMb"]/128) + 1
+                        least_hint = int(row["AverageAllocatedMb"]/256) + 1
                         function_params_dict[function_id]["memory_least_hint"] = least_hint
                         function_params_dict[function_id]["cpu_least_hint"] = least_hint
 
-                    function_params_dict[function_id]["memory_cap"] = 15
-                    function_params_dict[function_id]["cpu_cap"] = 15
+                    function_params_dict[function_id]["memory_cap"] = 9
+                    function_params_dict[function_id]["cpu_cap"] = 9
                     break
 
         # Create Profile paramters
