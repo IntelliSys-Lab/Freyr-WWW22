@@ -32,6 +32,7 @@ def launch():
         couch_port = "5984",
         n_invoker=2,
         keep_alive_window=60,
+        interval_limit=None,
         timeout_limit=60,
         decay_factor=0.9,
         reward_type="completion_time_decay",

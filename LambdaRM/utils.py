@@ -326,7 +326,7 @@ class SystemTime():
 
         if self.interval_limit is not None:
             # Interval must exceed limit to keep invokers healthy
-            if self.system_step > 1 and interval < self.interval_limit:
+            if self.system_step > 0 and interval < self.interval_limit:
                 while interval < self.interval_limit:
                     current_time = time.time()
                     interval = current_time - (self.system_up_time + self.system_runtime)

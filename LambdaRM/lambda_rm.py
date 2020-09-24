@@ -34,6 +34,7 @@ class LambdaRM():
         couch_port = "5984",
         n_invoker=2,
         keep_alive_window=60,
+        interval_limit=None,
         timeout_limit=60,
         decay_factor=0.8,
         reward_type="completion_time_decay"
@@ -65,7 +66,7 @@ class LambdaRM():
         )
 
         # Time module
-        self.system_time = SystemTime(1)
+        self.system_time = SystemTime(interval_limit)
 
     #
     # Interfaces with OpenWhisk
@@ -130,7 +131,7 @@ class LambdaRM():
 
     # Multiprocessing
     def invoke_openwhisk(self):
-        timestep = self.timetable.get_timestep(self.system_time.get_system_step())
+        timestep = self.timetable.get_timestep(self.system_time.get_system_step()-1)
         if timestep is not None:
             manager = multiprocessing.Manager()
             result_dict = manager.dict()
