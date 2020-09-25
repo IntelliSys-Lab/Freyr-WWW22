@@ -32,7 +32,7 @@ def launch():
         couch_port = "5984",
         n_invoker=2,
         keep_alive_window=60,
-        interval_limit=None,
+        interval_limit=1,
         timeout_limit=60,
         decay_factor=0.9,
         reward_type="completion_time_decay",
@@ -41,7 +41,7 @@ def launch():
     )
     
     # Number of max episode
-    max_episode = 100
+    max_episode = 150
     
     # Fixed RM
     lambda_rm.fixed_rm(

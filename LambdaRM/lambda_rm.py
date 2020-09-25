@@ -164,85 +164,83 @@ class LambdaRM():
     def try_update_request_history(self):
         manager = multiprocessing.Manager()
         result_dict = manager.dict()
-        for function in self.profile.function_profile:
-            result_dict[function.function_id] = manager.dict()
-            for request in function.get_request_history():
-                result_dict[function.function_id][request.request_id] = manager.dict()
-                result_dict[function.function_id][request.request_id]["is_done"] = False # Default value
-
         jobs = []
 
         for function in self.profile.function_profile:
-            for request in function.get_request_history():
-                if request.get_is_done() is False:
-                    p = multiprocessing.Process(
-                        target=request.try_update,
-                        args=(
-                            result_dict, 
-                            self.system_time.get_system_runtime(), 
-                            self.couch_link
-                        )
+            result_dict[function.function_id] = manager.dict()
+            for request in function.get_request_record().get_undone_request_record():
+                result_dict[function.function_id][request.request_id] = manager.dict()
+                result_dict[function.function_id][request.request_id]["is_done"] = False # Default value
+                
+                p = multiprocessing.Process(
+                    target=request.try_update,
+                    args=(
+                        result_dict, 
+                        self.system_time.get_system_runtime(), 
+                        self.couch_link
                     )
-                    jobs.append(p)
-                    p.start()
+                )
+                jobs.append(p)
+                p.start()
         
         for p in jobs:
             p.join()
 
         # Update requests according to the result dict
-        for function_id in result_dict.keys():
-            for function in self.profile.function_profile:
-                if function_id == function.get_function_id():
-                    for request_id in result_dict[function_id].keys():
-                        for request in function.get_request_history():
-                            if request_id == request.get_request_id():
-                                is_done = result_dict[function_id][request_id]["is_done"] 
-                                # Check if done
-                                if is_done is True:
-                                    done_time = self.system_time.get_system_runtime()
-                                    is_timeout = result_dict[function_id][request_id]["is_timeout"] 
-                                    # Check if timeout
-                                    if is_timeout is False:
-                                        duration = result_dict[function_id][request_id]["duration"]
-                                        is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
-                                    else:
-                                        duration = None
-                                        is_cold_start = None
+        done_request_dict = {}
 
-                                    # Set updates for each request
-                                    request.set_updates(
-                                        is_done=is_done,
-                                        done_time=done_time,
-                                        is_timeout=is_timeout,
-                                        completion_time=duration,
-                                        is_cold_start=is_cold_start
-                                    )
+        for function in self.profile.function_profile:
+            function_id = function.get_function_id()
+            done_request_dict[function_id] = []
+
+            for request in function.get_request_record().get_undone_request_record():
+                request_id = request.get_request_id()
+
+                # Check if done
+                is_done = result_dict[function_id][request_id]["is_done"] 
+                if is_done is True:
+                    done_time = self.system_time.get_system_runtime()
+                    is_timeout = result_dict[function_id][request_id]["is_timeout"] 
+                    # Check if timeout
+                    if is_timeout is False:
+                        duration = result_dict[function_id][request_id]["duration"]
+                        is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
+                    else:
+                        duration = None
+                        is_cold_start = None
+
+                    # Set updates for done requests
+                    request.set_updates(
+                        is_done=is_done,
+                        done_time=done_time,
+                        is_timeout=is_timeout,
+                        completion_time=duration,
+                        is_cold_start=is_cold_start
+                    )
+                    done_request_dict[function_id].append(request)
+            
+        # Update request cord of each function
+        for function in self.profile.get_function_profile():
+            function.get_request_record().update_request(done_request_dict[function.get_function_id()])
                                         
     def get_n_undone_request_from_profile(self):
         n_undone_request = 0
-
         for function in self.profile.function_profile:
-            for request in function.get_request_history():
-                if request.get_is_done() is False:
-                    n_undone_request = n_undone_request + 1
+            n_undone_request = n_undone_request + function.get_request_record().get_undone_size()
 
         return n_undone_request
 
     def get_current_timeout_num(self):
         n_timeout = 0
         for function in self.profile.function_profile:
-            for request in function.get_request_history():
-                if request.get_done_time() == self.system_time.get_system_runtime() and request.get_is_timeout() is True:
-                    n_timeout = n_timeout + 1
+            n_timeout = n_timeout + function.get_request_record().get_current_timeout_size(self.system_time.get_system_runtime())
 
         return n_timeout
 
     def get_total_timeout_num(self):
         n_timeout = 0
         for function in self.profile.function_profile:
-            for request in function.get_request_history():
-                if request.get_is_timeout() is True:
-                    n_timeout = n_timeout + 1
+            n_timeout = n_timeout + function.get_request_record().get_timeout_size()
 
         return n_timeout
 
@@ -251,10 +249,9 @@ class LambdaRM():
         total_completion_time = 0
 
         for function in self.profile.function_profile:
-            for request in function.get_request_history():
-                if request.get_is_done() is True and request.get_is_timeout() is False:
-                    request_num = request_num + 1
-                    total_completion_time = total_completion_time + request.get_completion_time()
+            _, r, t = function.get_request_record().get_avg_completion_time()
+            request_num = request_num + r
+            total_completion_time = total_completion_time + t
             
         if request_num == 0:
             avg_completion_time = 0
@@ -263,12 +260,12 @@ class LambdaRM():
 
         return avg_completion_time
 
-    def get_request_history_dict(self):
-        request_history_dict = {}
+    def get_request_record_dict(self):
+        request_record_dict = {}
         for function in self.profile.function_profile:
-            request_history_dict[function.function_id] = function.get_request_history()
+            request_record_dict[function.function_id] = function.get_request_record().get_total_request_record()
 
-        return request_history_dict
+        return request_record_dict
 
     def get_observation(self):
         # Controller state
@@ -341,17 +338,14 @@ class LambdaRM():
 
         if self.reward_type == "completion_time":
             for function in self.profile.function_profile:
-                for request in function.get_request_history():
-                    if request.get_is_done() is False:
-                        n_undone_request = n_undone_request + 1
-                        undone_reward = undone_reward + (- interval)
+                n_undone_request = n_undone_request + function.get_request_record().get_undone_size()
+                undone_reward = undone_reward + (- interval)
 
         elif self.reward_type == "completion_time_decay":
             for function in self.profile.function_profile:
-                for request in function.get_request_history():
-                    if request.get_is_done() is False:
-                        n_undone_request = n_undone_request + 1
-                        undone_reward = undone_reward + (- interval * np.power(self.decay_factor, self.system_time.get_system_runtime() - request.get_invoke_time()))
+                for request in function.get_request_record().get_undone_request_record():
+                    n_undone_request = n_undone_request + 1
+                    undone_reward = undone_reward + (- interval * np.power(self.decay_factor, self.system_time.get_system_runtime() - request.get_invoke_time()))
 
         # Total reward
         reward = timeout_reward + undone_reward
@@ -373,7 +367,7 @@ class LambdaRM():
             "system_step": self.system_time.get_system_step(),
             "avg_completion_time": self.get_avg_completion_time(),
             "timeout_num": self.get_total_timeout_num(),
-            "request_history_dict": self.get_request_history_dict(),
+            "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime()
         }
 
@@ -388,31 +382,31 @@ class LambdaRM():
             reward = 0
         else: # Time starts proceeding
             interval = self.system_time.step()
-            print("system_step: {}, system_runtime: {}, interval: {}".format(
-                self.system_time.get_system_step(), 
-                self.system_time.get_system_runtime(), 
-                interval
-                )
-            )
+            # print("system_step: {}, system_runtime: {}, interval: {}".format(
+            #     self.system_time.get_system_step(), 
+            #     self.system_time.get_system_runtime(), 
+            #     interval
+            #     )
+            # )
             
             # Update functions on OpenWhisk
-            before_update = time.time()
+            # before_update = time.time()
             self.update_openwhisk()
-            after_update = time.time()
-            print("Update overhead: {}".format(after_update - before_update))
+            # after_update = time.time()
+            # print("Update overhead: {}".format(after_update - before_update))
 
             # Invoke functions according to timetable
-            before_invoke = time.time()
+            # before_invoke = time.time()
             self.invoke_openwhisk()
-            after_invoke = time.time()
-            print("Invoke overhead: {}".format(after_invoke - before_invoke))
+            # after_invoke = time.time()
+            # print("Invoke overhead: {}".format(after_invoke - before_invoke))
 
             # Try to update undone requests
-            before_try = time.time()
+            # before_try = time.time()
             self.try_update_request_history()
-            after_try = time.time()
-            print("Try overhead: {}".format(after_try - before_try))
-            print("")
+            # after_try = time.time()
+            # print("Try overhead: {}".format(after_try - before_try))
+            # print("")
 
             # Get observation for next state
             observation = self.get_observation() 
@@ -588,7 +582,7 @@ class LambdaRM():
                 
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
-                    record = info["request_history_dict"]
+                    record = info["request_record_dict"]
                     
                     #
                     # Greedy resource adjustment: Completion time decay

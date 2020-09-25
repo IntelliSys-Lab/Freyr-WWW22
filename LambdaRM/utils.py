@@ -36,10 +36,10 @@ class Function():
         self.params = params
         self.function_id = self.params.function_id
 
-        self.request_history = []
+        self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
     
-    def set_function(self, cpu=2, memory=2):
+    def set_function(self, cpu=1, memory=1):
         self.cpu = cpu
         self.memory = memory
 
@@ -47,13 +47,13 @@ class Function():
         self.params.invoke_params = params
 
     def put_request(self, request):
-        self.request_history.append(request)
+        self.request_record.put_request(request)
 
     def get_function_id(self):
         return self.function_id
 
-    def get_request_history(self):
-        return self.request_history
+    def get_request_record(self):
+        return self.request_record
 
     def get_cpu(self):
         return self.cpu
@@ -65,36 +65,17 @@ class Function():
         if system_runtime == 0:
             avg_interval = 0
         else:
-            avg_interval = len(self.request_history) / system_runtime
+            avg_interval = self.request_record.get_size() / system_runtime
         
         return avg_interval
 
     def get_avg_completion_time(self):
-        request_num = 0
-        total_completion_time = 0
-
-        for request in self.request_history:
-            if request.get_is_done() is True and request.get_is_timeout() is False:
-                request_num = request_num + 1
-                total_completion_time = total_completion_time + request.get_completion_time()
-        
-        if request_num == 0:
-            avg_completion_time = 0
-        else:
-            avg_completion_time = total_completion_time / request_num
-
+        avg_completion_time, _, _ = self.request_record.get_avg_completion_time()
         return avg_completion_time
     
     def get_is_cold_start(self):
-        if len(self.request_history) == 0:
-            is_cold_start = True
-        else:
-            is_cold_start = self.request_history[-1].get_is_cold_start()
-
-        if is_cold_start is True:
-            return 1
-        else:
-            return 0
+        is_cold_start = self.request_record.get_is_cold_start()
+        return is_cold_start
     
     def set_resource_adjust(self, resource, adjust):
         # Adjust resources
@@ -171,8 +152,8 @@ class Function():
     def reset_resource_adjust_direction(self):
         self.resource_adjust_direction = [0, 0]
 
-    def reset_request_history(self):
-        self.request_history = []
+    def reset_request_record(self):
+        self.request_record.reset()
         
 
 class Request():
@@ -198,7 +179,7 @@ class Request():
 
         if doc_request is not None and len(doc_request["annotations"]) >= 5:
             result_dict[self.function_id][self.request_id]["is_done"] = True
-            result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"]
+            result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
             result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
             
             if len(doc_request["annotations"]) == 6:
@@ -253,6 +234,102 @@ class Request():
 
     def get_is_cold_start(self):
         return self.is_cold_start
+
+
+class RequestRecord():
+    """
+    Recording of either done or undone requests per Function
+    """
+
+    def __init__(self):
+        self.total_request_record = []
+        self.success_request_record = []
+        self.undone_request_record = []
+        self.timeout_request_record = []
+
+    def put_request(self, request):
+        self.total_request_record.append(request)
+
+        if request.get_is_done() is False:
+            self.undone_request_record.append(request)
+        else:
+            if request.get_is_timeout() is False:
+                self.success_request_record.append(request)
+            else:
+                self.timeout_request_record.append(request)
+
+    def update_request(self, done_request_list):
+        for request in done_request_list:
+            if request.get_is_timeout() is False:
+                self.success_request_record.append(request)
+            else:
+                self.timeout_request_record.append(request)
+            
+            self.undone_request_record.remove(request)
+
+    def get_size(self):
+        total_size = len(self.total_request_record)
+        return total_size
+
+    def get_undone_size(self):
+        undone_size = len(self.undone_request_record)
+        return undone_size
+
+    def get_current_timeout_size(self, system_runtime):
+        current_timeout_size = 0
+        for request in self.timeout_request_record:
+            if request.get_done_time() == system_runtime:
+                current_timeout_size = current_timeout_size + 1
+
+        return current_timeout_size
+
+    def get_timeout_size(self):
+        timeout_size = len(self.timeout_request_record)
+        return timeout_size
+
+    def get_avg_completion_time(self):
+        request_num = 0
+        total_completion_time = 0
+
+        for request in self.success_request_record:
+            request_num = request_num + 1
+            total_completion_time = total_completion_time + request.get_completion_time()
+        
+        if request_num == 0:
+            avg_completion_time = 0
+        else:
+            avg_completion_time = total_completion_time / request_num
+
+        return avg_completion_time, request_num, total_completion_time
+
+    def get_is_cold_start(self):
+        if self.get_size() == 0:
+            is_cold_start = True
+        else:
+            is_cold_start = self.total_request_record[-1].get_is_cold_start()
+
+        if is_cold_start is True:
+            return 1
+        else:
+            return 0
+
+    def get_total_request_record(self):
+        return self.total_request_record
+
+    def get_success_request_record(self):
+        return self.success_request_record
+
+    def get_undone_request_record(self):
+        return self.undone_request_record
+
+    def get_timeout_request_record(self):
+        return self.timeout_request_record
+
+    def reset(self):
+        self.success_request_record = []
+        self.undone_request_record = []
+        self.timeout_request_record = []
+
         
     
 class Profile():
@@ -326,7 +403,7 @@ class SystemTime():
 
         if self.interval_limit is not None:
             # Interval must exceed limit to keep invokers healthy
-            if self.system_step > 0 and interval < self.interval_limit:
+            if self.system_step >= 0 and interval < self.interval_limit:
                 while interval < self.interval_limit:
                     current_time = time.time()
                     interval = current_time - (self.system_up_time + self.system_runtime)
