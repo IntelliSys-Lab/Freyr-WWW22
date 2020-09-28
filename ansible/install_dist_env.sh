@@ -6,7 +6,6 @@
 
 #cd ../tools/ubuntu-setup/ && ./all.sh
 #cd ../../ansible
-#chmod 600 openwhisk.pem
 
 #
 # Install wsk cli for bootstrapper
@@ -30,9 +29,21 @@
 #     echo "export PATH=$PATH:'/home/ubuntu/openwhisk/bin'" >> ~/.bashrc
 #     echo "alias wsk='wsk -i'" >> ~/.bashrc
 #     echo "" >> ~/.bashrc
-
-#     source ~/.bashrc
 # fi
+
+#
+# Export ServerlessBench home directory
+#
+
+# if [ -z "$(env | grep "SERVERLESSBENCH_HOME")" ]
+# then
+#     echo "" >> ~/.bashrc
+#     echo "# Export ServerlessBench" >> ~/.bashrc
+#     echo "export SERVERLESSBENCH_HOME='/home/ubuntu/ServerlessBench/Testcase4-Application-breakdown'" >> ~/.bashrc
+#     echo "" >> ~/.bashrc
+# fi
+
+# source ~/.bashrc
 
 #
 # Install prerequisites of distributed cluster for openwhisk
