@@ -11,10 +11,6 @@ from utils import SystemTime, Request
 
 
 
-
-
-
-
 class LambdaRM():
     """ 
     LambdaRM: Serverless Resource Management via Reinforce Learning.
@@ -32,23 +28,23 @@ class LambdaRM():
         couch_password = "some_passw0rd",
         couch_host = "192.168.196.65",
         couch_port = "5984",
-        n_invoker=2,
+        n_invoker=4,
         keep_alive_window=60,
         interval_limit=None,
-        timeout_limit=60,
+        timeout_penalty=60,
         decay_factor=0.8,
-        reward_type="completion_time_decay"
+        reward_type="actual_completion_time"
     ):
         self.n_invoker = n_invoker
         self.keep_alive_window = keep_alive_window
-        self.timeout_limit = timeout_limit
+        self.timeout_penalty = timeout_penalty
         self.decay_factor = decay_factor
         self.reward_type = reward_type
         self.profile = profile
         self.timetable = timetable
 
         # Calculate state and action space 
-        self.state_space = 1 + 3 * n_invoker + 5 * self.profile.get_size()
+        self.state_space = 1 + 3 * self.n_invoker + 5 * self.profile.get_size()
         self.action_space = 1 + 4 * self.profile.get_size()
 
         # Set up Redis client
@@ -119,12 +115,13 @@ class LambdaRM():
         jobs = []
 
         for function in self.profile.function_profile:
-            p = multiprocessing.Process(
-                target=function.update_openwhisk,
-                args=(self.couch_link,)
-            )
-            jobs.append(p)
-            p.start()
+            if function.get_is_resource_changed() is True:
+                p = multiprocessing.Process(
+                    target=function.update_openwhisk,
+                    args=(self.couch_link,)
+                )
+                jobs.append(p)
+                p.start()
         
         for p in jobs:
             p.join()
@@ -161,7 +158,7 @@ class LambdaRM():
                             function.put_request(request)
     
     # Multiprocessing
-    def try_update_request_history(self):
+    def try_update_request_record(self):
         manager = multiprocessing.Manager()
         result_dict = manager.dict()
         jobs = []
@@ -187,6 +184,9 @@ class LambdaRM():
             p.join()
 
         # Update requests according to the result dict
+        # Return the timeout requests and rewards for done requests at this timestep
+        total_timeout = 0
+        total_completion_time = 0
         done_request_dict = {}
 
         for function in self.profile.function_profile:
@@ -205,9 +205,11 @@ class LambdaRM():
                     if is_timeout is False:
                         duration = result_dict[function_id][request_id]["duration"]
                         is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
+                        total_completion_time = total_completion_time + duration
                     else:
                         duration = None
                         is_cold_start = None
+                        total_timeout = total_timeout + 1
 
                     # Set updates for done requests
                     request.set_updates(
@@ -222,6 +224,8 @@ class LambdaRM():
         # Update request cord of each function
         for function in self.profile.get_function_profile():
             function.get_request_record().update_request(done_request_dict[function.get_function_id()])
+
+        return total_timeout, total_completion_time
                                         
     def get_n_undone_request_from_profile(self):
         n_undone_request = 0
@@ -230,6 +234,7 @@ class LambdaRM():
 
         return n_undone_request
 
+    # Deprecated
     def get_current_timeout_num(self):
         n_timeout = 0
         for function in self.profile.function_profile:
@@ -327,25 +332,32 @@ class LambdaRM():
 
         return observation
 
-    def get_reward(self, observation, interval):
+    def get_reward(
+        self, 
+        total_timeout, 
+        interval=None, 
+        total_completion_time=None
+    ):
         # Penalty for timeout requests
-        n_timeout = self.get_current_timeout_num()
-        timeout_reward = - self.timeout_limit * n_timeout
+        timeout_reward = - self.timeout_penalty * total_timeout
         
         # Penalty for undone requests
         n_undone_request = 0
         undone_reward = 0
-
-        if self.reward_type == "completion_time":
+        
+        if self.reward_type == "interval" and interval is not None:
             for function in self.profile.function_profile:
                 n_undone_request = n_undone_request + function.get_request_record().get_undone_size()
                 undone_reward = undone_reward + (- interval)
 
-        elif self.reward_type == "completion_time_decay":
+        elif self.reward_type == "interval_decay" and interval is not None:
             for function in self.profile.function_profile:
                 for request in function.get_request_record().get_undone_request_record():
                     n_undone_request = n_undone_request + 1
                     undone_reward = undone_reward + (- interval * np.power(self.decay_factor, self.system_time.get_system_runtime() - request.get_invoke_time()))
+
+        elif self.reward_type == "actual_completion_time" and total_completion_time is not None:
+            undone_reward = -total_completion_time
 
         # Total reward
         reward = timeout_reward + undone_reward
@@ -390,7 +402,7 @@ class LambdaRM():
             # )
             
             # Update functions on OpenWhisk
-            # before_update = time.time()
+            # before_update = time.time()cd 
             self.update_openwhisk()
             # after_update = time.time()
             # print("Update overhead: {}".format(after_update - before_update))
@@ -403,14 +415,18 @@ class LambdaRM():
 
             # Try to update undone requests
             # before_try = time.time()
-            self.try_update_request_history()
+            total_timeout, total_completion_time = self.try_update_request_record()
             # after_try = time.time()
             # print("Try overhead: {}".format(after_try - before_try))
             # print("")
 
             # Get observation for next state
             observation = self.get_observation() 
-            reward = self.get_reward(observation, interval)
+            reward = self.get_reward(
+                total_timeout=total_timeout,
+                interval=interval,
+                total_completion_time=total_completion_time
+            )
             
             # Reset resource adjust direction for each function 
             for function in self.profile.function_profile:
@@ -743,7 +759,6 @@ class LambdaRM():
             reward_sum = 0
             
             while True:
-                time.sleep(0.5)
                 actual_time = actual_time + 1
                 action, value_pred, log_prob = pg_agent.choose_action(observation)
                 next_observation, reward, done, info = self.step(action.item())

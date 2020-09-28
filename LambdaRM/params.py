@@ -2,7 +2,7 @@
 # Global variables
 #
 
-WSK_CLI = "/home/ubuntu/openwhisk/bin/wsk -i"
+WSK_CLI = "wsk -i"
         
 #
 # Parameter classes

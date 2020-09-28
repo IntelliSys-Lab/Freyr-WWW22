@@ -72,16 +72,20 @@ class WorkflowGenerator():
         function_params = profile_params
         function_list = []
         
-        # Hardcoded functions
+        # Hardcoded parameters of functions
         for param in function_params:
             if param.function_id == "function0":
                 param.invoke_params = "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"
             elif param.function_id == "function1":
                 param.invoke_params = "-p threads 2 -p calcs 10000000 -p sleep 0 -p loops 2 -p arraySize 5000000"
             elif param.function_id == "function2":
-                param.invoke_params = "-p threads 2 -p calcs 100000 -p sleep 0 -p loops 2 -p arraySize 100000"
+                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
             elif param.function_id == "function3":
+                param.invoke_params = "-p threads 2 -p calcs 100000 -p sleep 0 -p loops 2 -p arraySize 100000"
+            elif param.function_id == "function4":
                 param.invoke_params = "-p threads 2 -p calcs 200000 -p sleep 0 -p loops 2 -p arraySize 100000"
+            elif param.function_id == "function5":
+                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
             
             function = Function(param)
             function.set_function(

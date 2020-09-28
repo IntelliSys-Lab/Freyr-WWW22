@@ -20,16 +20,19 @@
 #cd ../openwhisk/ansible
 
 #
-# Alias wsk to .bashrc if no alias ever made before 
+#  Export wsk folder to system path if not detected
 #
 
-#if [ -z "$(cat ~/.bashrc | tail -n 3 | grep wsk)" ]
-#then
-#    echo "" >> ~/.bashrc
-#    echo "# Configure wsk cli" >> ~/.bashrc
-#    echo "alias wsk=\"/home/ubuntu/openwhisk/bin/wsk -i\"" >> ~/.bashrc
-#    echo "" >> ~/.bashrc
-#fi
+# if [ -z "$(echo $PATH | grep "/home/ubuntu/openwhisk/bin")" ]
+# then
+#     echo "" >> ~/.bashrc
+#     echo "# Configure wsk cli" >> ~/.bashrc
+#     echo "export PATH=$PATH:'/home/ubuntu/openwhisk/bin'" >> ~/.bashrc
+#     echo "alias wsk='wsk -i'" >> ~/.bashrc
+#     echo "" >> ~/.bashrc
+
+#     source ~/.bashrc
+# fi
 
 #
 # Install prerequisites of distributed cluster for openwhisk

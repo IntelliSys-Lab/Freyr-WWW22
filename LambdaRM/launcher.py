@@ -30,18 +30,18 @@ def launch():
         couch_password = "some_passw0rd",
         couch_host = "192.168.196.65",
         couch_port = "5984",
-        n_invoker=2,
+        n_invoker=4,
         keep_alive_window=60,
         interval_limit=1,
-        timeout_limit=60,
+        timeout_penalty=5000,
         decay_factor=0.9,
-        reward_type="completion_time_decay",
+        reward_type="actual_completion_time",
         profile=profile,
         timetable=timetable,
     )
     
     # Number of max episode
-    max_episode = 150
+    max_episode = 100
     
     # Fixed RM
     lambda_rm.fixed_rm(

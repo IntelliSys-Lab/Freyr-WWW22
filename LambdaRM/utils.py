@@ -38,6 +38,7 @@ class Function():
 
         self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
+        self.is_resource_changed = False
     
     def set_function(self, cpu=1, memory=1):
         self.cpu = cpu
@@ -60,6 +61,9 @@ class Function():
 
     def get_memory(self):
         return self.memory
+
+    def get_is_resource_changed(self):
+        return self.is_resource_changed
 
     def get_avg_interval(self, system_runtime):
         if system_runtime == 0:
@@ -96,9 +100,14 @@ class Function():
             else:
                 if next_memory > self.params.memory_least_hint:
                     next_memory = next_memory - 1
-            
-        self.set_function(next_cpu, next_memory)
         
+        # If either one of two resources has been changed
+        if self.cpu != next_cpu or self.memory != next_memory:
+            self.set_function(next_cpu, next_memory)
+            self.is_resource_changed = True
+        else:
+            self.is_resource_changed = False
+
         # Set resource adjust direction if not touched yet
         if self.resource_adjust_direction[resource] == 0:
             self.resource_adjust_direction[resource] = adjust
@@ -275,6 +284,7 @@ class RequestRecord():
         undone_size = len(self.undone_request_record)
         return undone_size
 
+    # Deprecated
     def get_current_timeout_size(self, system_runtime):
         current_timeout_size = 0
         for request in self.timeout_request_record:
