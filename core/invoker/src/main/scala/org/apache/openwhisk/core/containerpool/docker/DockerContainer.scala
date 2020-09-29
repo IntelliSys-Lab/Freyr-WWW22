@@ -44,6 +44,9 @@ object DockerContainer {
 
   private val byteStringSentinel = ByteString(Container.ACTIVATION_LOG_SENTINEL)
 
+  // Convert cpu limit from Int representation to actual Float
+  def convertCpu(cpu: Int): Double = cpu * 0.25
+
   /**
    * Creates a container running on a docker daemon.
    *
@@ -90,7 +93,7 @@ object DockerContainer {
     val args = Seq(
       // "--cpu-shares",
       "--cpus", // Use --cpus to regulate CPU resource
-      cpuShares.toString,
+      convertCpu(cpuShares).toString,
       "--memory",
       s"${memory.toMB}m",
       "--memory-swap",

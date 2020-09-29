@@ -44,13 +44,13 @@ protected[entity] class MemoryLimit private (val megabytes: Int) extends AnyVal
 
 protected[core] object MemoryLimit extends ArgNormalizer[MemoryLimit] {
   // Default setting of cpu-shares
-  val USER_CPU: Int = 8
-  val MIN_CPU: Int = 0.25
-  val MAX_CPU: Int = 2
-  val STD_CPU: Int = 1
+  val USER_CPU: Int = 64
+  val MIN_CPU: Int = 1
+  val MAX_CPU: Int = 8
+  val STD_CPU: Int = 4
 
   // Extract cpu limit from input 
-  def decodeCpu(input: Int): Int = (input - 1) / 8 * 0.25 + 0.25
+  def decodeCpu(input: Int): Int = (input - 1) / 8 * 1 + 1
 
   // Extract memory limit from input 
   def decodeMemory(input: Int): Int = (input - 1) % 8 * 256 + 256
