@@ -46,14 +46,14 @@ protected[core] object MemoryLimit extends ArgNormalizer[MemoryLimit] {
   // Default setting of cpu-shares
   val USER_CPU: Int = 1024
   val MIN_CPU: Int = 128
-  val MAX_CPU: Int = 256
+  val MAX_CPU: Int = 1024
   val STD_CPU: Int = 128
 
   // Extract cpu limit from input 
-  def decodeCpu(input: Int): Int = (input - 1) / 9 * 16 + 128
+  def decodeCpu(input: Int): Int = (input - 1) / 8 * 128 + 128
 
   // Extract memory limit from input 
-  def decodeMemory(input: Int): Int = (input - 1) % 9 * 256 + 256
+  def decodeMemory(input: Int): Int = (input - 1) % 8 * 256 + 256
 
   val config = loadConfigOrThrow[MemoryLimitConfig](ConfigKeys.memory)
 
