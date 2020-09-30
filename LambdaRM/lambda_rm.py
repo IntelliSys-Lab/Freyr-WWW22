@@ -61,8 +61,11 @@ class LambdaRM():
             couch_protocol, couch_user, couch_password, couch_host, couch_port
         )
 
-        # Time module
+        # Set up time module
         self.system_time = SystemTime(interval_limit)
+
+        # Set up logger module
+        self.logger_wrapper = Logger()
 
     #
     # Interfaces with OpenWhisk
@@ -254,7 +257,7 @@ class LambdaRM():
         total_completion_time = 0
 
         for function in self.profile.function_profile:
-            _, r, t = function.get_request_record().get_avg_completion_time()
+            _, r, t = function.get_avg_completion_time()
             request_num = request_num + r
             total_completion_time = total_completion_time + t
             
@@ -264,6 +267,14 @@ class LambdaRM():
             avg_completion_time = total_completion_time / request_num
 
         return avg_completion_time
+
+    def get_avg_completion_time_per_function(self):
+        avg_completion_time_per_function = {}
+
+        for function in self.profile.get_function_profile():
+            avg_completion_time_per_function[function.get_function_id()] = function.get_avg_completion_time()
+
+        return avg_completion_time_per_function
 
     def get_request_record_dict(self):
         request_record_dict = {}
@@ -378,6 +389,7 @@ class LambdaRM():
         info = {
             "system_step": self.system_time.get_system_step(),
             "avg_completion_time": self.get_avg_completion_time(),
+            "avg_completion_time_per_function": self.avg_completion_time_per_function(),
             "timeout_num": self.get_total_timeout_num(),
             "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime()
@@ -460,13 +472,16 @@ class LambdaRM():
         show_plot=True,
     ):
         # Set up logger
-        logger_wrapper = Logger("FixedRM")
-        logger = logger_wrapper.get_logger()
+        rm = "FixedRM"
+        logger = logger_wrapper.get_logger(rm)
         
         # Trends recording
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        avg_completion_time_per_function_trend = {}
+        for function in self.profile.get_function_profile():
+            avg_completion_time_per_function_trend[function.get_function_id()] = []
         
         # Start training
         for episode in range(max_episode):
@@ -492,7 +507,7 @@ class LambdaRM():
                 logger.debug("Take action: {}".format(action))
                 logger.debug("Observation: {}".format(observation))
                 logger.debug("Reward: {}".format(reward))
-                
+
                 reward_sum = reward_sum + reward
                 
                 if done:
@@ -515,6 +530,9 @@ class LambdaRM():
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
+                    for function_id in avg_completion_time_per_function.keys():
+                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
                     
                     break
                 
@@ -540,7 +558,15 @@ class LambdaRM():
                 timeout_num_trend=timeout_num_trend, 
             )
 
-        logger_wrapper.shutdown_logger()
+        # Log trends
+        self.log_trends(
+            rm_name=rm,
+            reward_trend=reward_trend,
+            avg_completion_time_trend=avg_completion_time_trend,
+            avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
+            timeout_num_trend=timeout_num_trend,
+            loss_trend=None,
+        )
 
     #
     # Greedy RM
@@ -575,13 +601,16 @@ class LambdaRM():
             return actions
 
         # Set up logger
-        logger_wrapper = Logger("GreedyRM")
-        logger = logger_wrapper.get_logger()
+        rm = "GreedyRM"
+        logger = logger_wrapper.get_logger(rm)
         
         # Record trends
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        avg_completion_time_per_function_trend = {}
+        for function in self.profile.get_function_profile():
+            avg_completion_time_per_function_trend[function.get_function_id()] = []
         
         # Start training
         for episode in range(max_episode):
@@ -692,6 +721,9 @@ class LambdaRM():
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
+                    for function_id in avg_completion_time_per_function.keys():
+                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
                     
                     break
             
@@ -714,8 +746,16 @@ class LambdaRM():
                 avg_completion_time_trend=avg_completion_time_trend,
                 timeout_num_trend=timeout_num_trend,
             )
-            
-        logger_wrapper.shutdown_logger()
+        
+        # Log trends
+        self.log_trends(
+            rm_name=rm,
+            reward_trend=reward_trend,
+            avg_completion_time_trend=avg_completion_time_trend,
+            avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
+            timeout_num_trend=timeout_num_trend,
+            loss_trend=None,
+        )
 
     #
     # Policy gradient training
@@ -729,8 +769,8 @@ class LambdaRM():
         show_plot=True,
     ):
         # Set up logger
-        logger_wrapper = Logger("LambdaRM")
-        logger = logger_wrapper.get_logger()
+        rm = "LambdaRM"
+        logger = logger_wrapper.get_logger(rm)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -748,6 +788,9 @@ class LambdaRM():
         avg_completion_time_trend = []
         timeout_num_trend = []
         loss_trend = []
+        avg_completion_time_per_function_trend = {}
+        for function in self.profile.get_function_profile():
+            avg_completion_time_per_function_trend[function.get_function_id()] = []
         
         # Start training
         for episode in range(max_episode):
@@ -805,6 +848,9 @@ class LambdaRM():
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
                     loss_trend.append(loss)
+                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
+                    for function_id in avg_completion_time_per_function.keys():
+                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
                     
                     break
                 
@@ -832,5 +878,55 @@ class LambdaRM():
                 loss_trend=loss_trend
             )
 
-        logger_wrapper.shutdown_logger()
-        
+        # Log trends
+        self.log_trends(
+            rm_name=rm,
+            reward_trend=reward_trend,
+            avg_completion_time_trend=avg_completion_time_trend,
+            avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
+            timeout_num_trend=timeout_num_trend,
+            loss_trend=None,
+        )
+
+    def log_trends(
+        self, 
+        rm_name,
+        reward_trend,
+        avg_completion_time_trend,
+        avg_completion_time_per_function_trend,
+        timeout_num_trend,
+        loss_trend=None,
+    ):
+        # Log reward trend
+        logger = self.logger_wrapper.get_logger("RewardTrends")
+        logger.debug("")
+        logger.debug("{}:".format(rm_name))
+        logger.debug(','.join(str(reward) for reward in reward_trend))
+
+        # Log avg completion time trend
+        logger = self.logger_wrapper.get_logger("AvgCompletionTimeTrends")
+        logger.debug("")
+        logger.debug("{}:".format(rm_name))
+        logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_trend))
+
+        # Log avg completion time per function trend 
+        logger = self.logger_wrapper.get_logger("AvgCompletionTimePerFunctionTrends")
+        logger.debug("")
+        logger.debug("{}:".format(rm_name))
+        logger.debug("")
+        for function_id in avg_completion_time_per_function_trend.keys():
+            logger.debug("{}:".format(function_id))
+            logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_per_function_trend[function_id]))
+
+        # Log timeout number trend
+        logger = self.logger_wrapper.get_logger("TimeoutNumTrends")
+        logger.debug("")
+        logger.debug("{}:".format(rm_name))
+        logger.debug(','.join(str(timeout_num) for timeout_num in timeout_num_trend))
+
+        # Log loss trend
+        if loss_trend is not None:
+            logger = self.logger_wrapper.get_logger("LossTrends")
+            logger.debug("")
+            logger.debug("{}:".format(rm_name))
+            logger.debug(','.join(str(loss) for loss in loss_trend))

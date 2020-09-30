@@ -14,8 +14,8 @@ class FunctionParameters():
     """
     def __init__(
         self,
-        cpu_cap=15,
-        memory_cap=15,
+        cpu_cap=8,
+        memory_cap=8,
         cpu_least_hint=1,
         memory_least_hint=1,
         function_id=None,

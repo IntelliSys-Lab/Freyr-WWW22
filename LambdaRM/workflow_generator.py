@@ -11,17 +11,15 @@ class WorkflowGenerator():
         self,
         azure_file_path="azurefunctions-dataset2019/",
         memory_traces_file="sampled_memory_traces.csv",
-        duration_traces_file="sampled_duration_traces.csv",
         invocation_traces_file="sampled_invocation_traces.csv"
     ):
         memory_traces = pd.read_csv(azure_file_path + memory_traces_file)
-        duration_traces = pd.read_csv(azure_file_path + duration_traces_file)
         invocation_traces = pd.read_csv(azure_file_path + invocation_traces_file)
 
         function_params_dict = {}
 
         # Retrieve function hash and its corresponding application hash
-        for _, row in duration_traces.iterrows():
+        for _, row in invocation_traces.iterrows():
             function_id = row["FunctionId"]
             function_params_dict[function_id] = {}
 
@@ -29,18 +27,20 @@ class WorkflowGenerator():
             for _, row in memory_traces.iterrows():
                 if row["FunctionId"] == function_id:
                     if row["AverageAllocatedMb"] < 256:
-                        function_params_dict[function_id]["memory_least_hint"] = 1
-                        function_params_dict[function_id]["cpu_least_hint"] = 1
-                    elif row["AverageAllocatedMb"] > 2304:
-                        function_params_dict[function_id]["memory_least_hint"] = 9
-                        function_params_dict[function_id]["cpu_least_hint"] = 9
+                        least_hint = 1
+                        function_params_dict[function_id]["memory_least_hint"] = least_hint
+                        function_params_dict[function_id]["cpu_least_hint"] = least_hint
+                    elif row["AverageAllocatedMb"] > 2048:
+                        least_hint = 8
+                        function_params_dict[function_id]["memory_least_hint"] = least_hint
+                        function_params_dict[function_id]["cpu_least_hint"] = least_hint
                     else:
                         least_hint = int(row["AverageAllocatedMb"]/256) + 1
                         function_params_dict[function_id]["memory_least_hint"] = least_hint
                         function_params_dict[function_id]["cpu_least_hint"] = least_hint
 
-                    function_params_dict[function_id]["memory_cap"] = 9
-                    function_params_dict[function_id]["cpu_cap"] = 9
+                    function_params_dict[function_id]["memory_cap"] = 8
+                    function_params_dict[function_id]["cpu_cap"] = 8
                     break
 
         # Create Profile paramters
@@ -74,18 +74,18 @@ class WorkflowGenerator():
         
         # Hardcoded parameters of functions
         for param in function_params:
-            if param.function_id == "function0":
-                param.invoke_params = "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"
-            elif param.function_id == "function1":
-                param.invoke_params = "-p threads 2 -p calcs 10000000 -p sleep 0 -p loops 2 -p arraySize 5000000"
-            elif param.function_id == "function2":
-                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
-            elif param.function_id == "function3":
-                param.invoke_params = "-p threads 2 -p calcs 100000 -p sleep 0 -p loops 2 -p arraySize 100000"
-            elif param.function_id == "function4":
-                param.invoke_params = "-p threads 2 -p calcs 200000 -p sleep 0 -p loops 2 -p arraySize 100000"
-            elif param.function_id == "function5":
-                param.invoke_params = "-p bucket_name openwhisk.tlq -p key 10000_Sales_Records.csv"
+            if param.function_id == "alu":
+                param.invoke_params = "-p loopTime 10000000 -p parallelIndex 100" # 64: 1.3 sec, 1: 10 sec
+            elif param.function_id == "ms":
+                param.invoke_params = "-p listSize 100000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
+            elif param.function_id == "gd":
+                param.invoke_params = "-p x_row 20 -p x_col 20 -p w_row 50 -p loopTime 1" # 64: 2.2 sec, 1: 8.7 sec
+            elif param.function_id == "knn":
+                param.invoke_params = "-p datasetSize 1000 -p featureDim 100 -p k 3 -p loopTime 1" # 64: 1.7 sec, 1: 7.2 sec
+            elif param.function_id == "imageProcessSequence":
+                param.invoke_params = "-p imageName test.jpg" # 64: 11.5 sec, 1: 26.6 sec
+            elif param.function_id == "alexa-frontend":
+                param.invoke_params = "-p utter 'open smarthome to I love Taylor Swift'" # 64: 4 sec, 1: 9.6 sec
             
             function = Function(param)
             function.set_function(
