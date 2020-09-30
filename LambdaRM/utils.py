@@ -74,8 +74,8 @@ class Function():
         return avg_interval
 
     def get_avg_completion_time(self):
-        avg_completion_time, _, _ = self.request_record.get_avg_completion_time()
-        return avg_completion_time
+        avg_completion_time, request_num, total_completion_time = self.request_record.get_avg_completion_time()
+        return avg_completion_time, request_num, total_completion_time
     
     def get_is_cold_start(self):
         is_cold_start = self.request_record.get_is_cold_start()

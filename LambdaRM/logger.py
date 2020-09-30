@@ -7,7 +7,7 @@ class Logger():
     Log information to console and/or file
     """
     def __init__(
-        self, 
+        self,
         log_path=os.path.dirname(os.getcwd())+'/LambdaRM/logs/'
     ):
         self.log_path = log_path
@@ -21,7 +21,7 @@ class Logger():
 
         self.file_handler = None
 
-    def get_logger(self， file_name):
+    def get_logger(self, file_name):
         if self.file_handler is not None:
             self.logger.removeHandler(self.file_handler)
 

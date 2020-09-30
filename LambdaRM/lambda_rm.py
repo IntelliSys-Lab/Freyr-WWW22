@@ -1,6 +1,7 @@
 import time
 import redis
 import numpy as np
+np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)  
 import matplotlib.pyplot as plt
 import multiprocessing
 
@@ -389,7 +390,7 @@ class LambdaRM():
         info = {
             "system_step": self.system_time.get_system_step(),
             "avg_completion_time": self.get_avg_completion_time(),
-            "avg_completion_time_per_function": self.avg_completion_time_per_function(),
+            "avg_completion_time_per_function": self.get_avg_completion_time_per_function(),
             "timeout_num": self.get_total_timeout_num(),
             "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime()
@@ -473,7 +474,7 @@ class LambdaRM():
     ):
         # Set up logger
         rm = "FixedRM"
-        logger = logger_wrapper.get_logger(rm)
+        logger = self.logger_wrapper.get_logger(rm)
         
         # Trends recording
         reward_trend = []
@@ -602,7 +603,7 @@ class LambdaRM():
 
         # Set up logger
         rm = "GreedyRM"
-        logger = logger_wrapper.get_logger(rm)
+        logger = self.logger_wrapper.get_logger(rm)
         
         # Record trends
         reward_trend = []
@@ -692,7 +693,7 @@ class LambdaRM():
                             resource_adjust_list[id] = [0, 2] # Decrease one slot for CPU and memory
                     
                     action = encode_action(self.profile.function_profile, resource_adjust_list)
-                    
+
                 logger.debug("")
                 logger.debug("Actual timestep {}".format(actual_time))
                 logger.debug("System timestep {}".format(system_time))
@@ -770,7 +771,7 @@ class LambdaRM():
     ):
         # Set up logger
         rm = "LambdaRM"
-        logger = logger_wrapper.get_logger(rm)
+        logger = self.logger_wrapper.get_logger(rm)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
