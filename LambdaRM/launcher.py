@@ -14,12 +14,10 @@ def launch():
     profile, timetable = workflow_generator.generate_workflow(
         default="azure",
         profile_params=profile_params,
-        timetable_params=timetable_params
+        timetable_params=timetable_params,
+        max_timestep=120
     )
     
-    reward_type = "completion_time_decay"
-    file_suffix = "_Azure_Decay"
-
     # Set up LambdaRM
     lambda_rm = LambdaRM(
         redis_host="192.168.196.213",
@@ -40,9 +38,6 @@ def launch():
         timetable=timetable,
     )
     
-    # Number of max episode
-    max_episode = 100
-    
     # Fixed RM
     lambda_rm.fixed_rm(
         max_episode=10,
@@ -59,12 +54,22 @@ def launch():
         show_plot=False
     )
 
-    # Start training
+    # Train
     lambda_rm.train(
-        max_episode=max_episode,
-        plot_prefix_name="LambdaRM" + file_suffix,
+        max_episode=100,
+        save_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_train",
         save_plot=True,
         show_plot=False
+    )
+
+    # Eval
+    lambda_rm.eval(
+        max_episode=10,
+        checkpoint_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_eval",
+        save_plot=True,
+        show_plot=False,
     )
 
 

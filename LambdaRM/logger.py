@@ -21,12 +21,15 @@ class Logger():
 
         self.file_handler = None
 
-    def get_logger(self, file_name):
+    def get_logger(self, file_name, overwrite=True):
         if self.file_handler is not None:
             self.logger.removeHandler(self.file_handler)
 
         log_name = self.log_path + "{}.txt".format(file_name)
-        self.file_handler = logging.FileHandler(log_name, mode='w')
+        if overwrite is True:
+            self.file_handler = logging.FileHandler(log_name, mode='w')
+        else:
+            self.file_handler = logging.FileHandler(log_name, mode='a')
         self.file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(self.file_handler)
 

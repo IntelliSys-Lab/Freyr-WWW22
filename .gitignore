@@ -101,5 +101,6 @@ core/routemgmt/getApi/utils.js
 # LambdaRM
 LambdaRM/logs/*
 LambdaRM/figures/*
+LambdaRM/ckpt/*
 nohup.out
 *.code-workspace

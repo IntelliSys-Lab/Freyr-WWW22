@@ -1,7 +1,6 @@
 import time
 import redis
 import numpy as np
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)  
 import matplotlib.pyplot as plt
 import multiprocessing
 
@@ -258,7 +257,7 @@ class LambdaRM():
         total_completion_time = 0
 
         for function in self.profile.function_profile:
-            _, r, t = function.get_avg_completion_time()
+            _, r, t = function.get_request_record().get_avg_completion_time()
             request_num = request_num + r
             total_completion_time = total_completion_time + t
             
@@ -474,7 +473,7 @@ class LambdaRM():
     ):
         # Set up logger
         rm = "FixedRM"
-        logger = self.logger_wrapper.get_logger(rm)
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Trends recording
         reward_trend = []
@@ -563,6 +562,7 @@ class LambdaRM():
         self.log_trends(
             rm_name=rm,
             reward_trend=reward_trend,
+            overwrite=True,
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
@@ -603,7 +603,7 @@ class LambdaRM():
 
         # Set up logger
         rm = "GreedyRM"
-        logger = self.logger_wrapper.get_logger(rm)
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Record trends
         reward_trend = []
@@ -752,6 +752,7 @@ class LambdaRM():
         self.log_trends(
             rm_name=rm,
             reward_trend=reward_trend,
+            overwrite=False,
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
@@ -765,13 +766,14 @@ class LambdaRM():
     def train(
         self,
         max_episode=150,
-        plot_prefix_name="LambdaRM",
+        save_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_train",
         save_plot=False,
         show_plot=True,
     ):
         # Set up logger
-        rm = "LambdaRM"
-        logger = self.logger_wrapper.get_logger(rm)
+        rm = "LambdaRM_train"
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -793,6 +795,10 @@ class LambdaRM():
         for function in self.profile.get_function_profile():
             avg_completion_time_per_function_trend[function.get_function_id()] = []
         
+        # Pinpoint best avg completion time model
+        min_avg_completion_time = 10e8
+        min_timeout_num = 10e8
+
         # Start training
         for episode in range(max_episode):
             observation = self.reset()
@@ -828,9 +834,18 @@ class LambdaRM():
                 reward_sum = reward_sum + reward
                 
                 if done:
-                    loss = pg_agent.propagate()
                     avg_completion_time = info["avg_completion_time"]
                     timeout_num = info["timeout_num"]
+                    
+                    if timeout_num < min_timeout_num:
+                        min_timeout_num = timeout_num
+                        pg_agent.save(save_path)
+                    else:
+                        if avg_completion_time < min_avg_completion_time:
+                            min_avg_completion_time = avg_completion_time
+                            pg_agent.save(save_path)
+
+                    loss = pg_agent.propagate()
                     
                     logger.info("")
                     logger.info("**********")
@@ -883,6 +898,127 @@ class LambdaRM():
         self.log_trends(
             rm_name=rm,
             reward_trend=reward_trend,
+            overwrite=False,
+            avg_completion_time_trend=avg_completion_time_trend,
+            avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
+            timeout_num_trend=timeout_num_trend,
+            loss_trend=loss_trend,
+        )
+
+    def eval(
+        self,
+        max_episode=10,
+        checkpoint_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_eval",
+        save_plot=False,
+        show_plot=True,
+    ):
+        # Set up logger
+        rm = "LambdaRM_eval"
+        logger = self.logger_wrapper.get_logger(rm, True)
+        
+        # Set up policy gradient agent
+        pg_agent = PPO2Agent(
+            observation_dim=self.state_space,
+            action_dim=self.action_space,
+            hidden_dims=[64, 32],
+            learning_rate=0.005,
+            discount_factor=1,
+            ppo_clip=0.2,
+            ppo_steps=5
+        )
+
+        # Restore checkpoint model
+        pg_agent.load(checkpoint_path)
+        
+        # Record trends
+        reward_trend = []
+        avg_completion_time_trend = []
+        timeout_num_trend = []
+        avg_completion_time_per_function_trend = {}
+        for function in self.profile.get_function_profile():
+            avg_completion_time_per_function_trend[function.get_function_id()] = []
+        
+        # Start training
+        for episode in range(max_episode):
+            observation = self.reset()
+            pg_agent.reset()
+
+            actual_time = 0
+            system_time = 0
+            reward_sum = 0
+            
+            while True:
+                actual_time = actual_time + 1
+                action, value_pred, log_prob = pg_agent.choose_action(observation)
+                next_observation, reward, done, info = self.step(action.item())
+
+                if system_time < info["system_step"]:
+                    system_time = info["system_step"]
+                    
+                logger.debug("")
+                logger.debug("Actual timestep {}".format(actual_time))
+                logger.debug("System timestep {}".format(system_time))
+                logger.debug("Take action: {}".format(action))
+                logger.debug("Observation: {}".format(observation))
+                logger.debug("Reward: {}".format(reward))
+                
+                reward_sum = reward_sum + reward
+                
+                if done:
+                    avg_completion_time = info["avg_completion_time"]
+                    timeout_num = info["timeout_num"]
+                    
+                    logger.info("")
+                    logger.info("**********")
+                    logger.info("**********")
+                    logger.info("**********")
+                    logger.info("")
+                    logger.info("Episode {} finished after:".format(episode))
+                    logger.info("{} actual timesteps".format(actual_time))
+                    logger.info("{} system timesteps".format(system_time))
+                    logger.info("Total reward: {}".format(reward_sum))
+                    logger.info("Avg completion time: {}".format(avg_completion_time))
+                    logger.info("Timeout num: {}".format(timeout_num))
+                    
+                    reward_trend.append(reward_sum)
+                    avg_completion_time_trend.append(avg_completion_time)
+                    timeout_num_trend.append(timeout_num)
+                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
+                    for function_id in avg_completion_time_per_function.keys():
+                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    
+                    break
+                
+                observation = next_observation
+
+            # Cool down invokers
+            time.sleep(self.keep_alive_window)
+        
+        # Plot each episode 
+        plotter = Plotter()
+        
+        if save_plot is True:
+            plotter.plot_save(
+                prefix_name=plot_prefix_name, 
+                reward_trend=reward_trend, 
+                avg_completion_time_trend=avg_completion_time_trend,
+                timeout_num_trend=timeout_num_trend, 
+                loss_trend=None
+            )
+        if show_plot is True:
+            plotter.plot_show(
+                reward_trend=reward_trend, 
+                avg_completion_time_trend=avg_completion_time_trend, 
+                timeout_num_trend=timeout_num_trend, 
+                loss_trend=None
+            )
+
+        # Log trends
+        self.log_trends(
+            rm_name=rm,
+            reward_trend=reward_trend,
+            overwrite=False,
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
@@ -892,6 +1028,7 @@ class LambdaRM():
     def log_trends(
         self, 
         rm_name,
+        overwrite,
         reward_trend,
         avg_completion_time_trend,
         avg_completion_time_per_function_trend,
@@ -899,19 +1036,19 @@ class LambdaRM():
         loss_trend=None,
     ):
         # Log reward trend
-        logger = self.logger_wrapper.get_logger("RewardTrends")
+        logger = self.logger_wrapper.get_logger("RewardTrends", overwrite)
         logger.debug("")
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(reward) for reward in reward_trend))
 
         # Log avg completion time trend
-        logger = self.logger_wrapper.get_logger("AvgCompletionTimeTrends")
+        logger = self.logger_wrapper.get_logger("AvgCompletionTimeTrends", overwrite)
         logger.debug("")
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_trend))
 
         # Log avg completion time per function trend 
-        logger = self.logger_wrapper.get_logger("AvgCompletionTimePerFunctionTrends")
+        logger = self.logger_wrapper.get_logger("AvgCompletionTimePerFunctionTrends", overwrite)
         logger.debug("")
         logger.debug("{}:".format(rm_name))
         logger.debug("")
@@ -920,14 +1057,14 @@ class LambdaRM():
             logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_per_function_trend[function_id]))
 
         # Log timeout number trend
-        logger = self.logger_wrapper.get_logger("TimeoutNumTrends")
+        logger = self.logger_wrapper.get_logger("TimeoutNumTrends", overwrite)
         logger.debug("")
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(timeout_num) for timeout_num in timeout_num_trend))
 
         # Log loss trend
         if loss_trend is not None:
-            logger = self.logger_wrapper.get_logger("LossTrends")
+            logger = self.logger_wrapper.get_logger("LossTrends", overwrite)
             logger.debug("")
             logger.debug("{}:".format(rm_name))
             logger.debug(','.join(str(loss) for loss in loss_trend))

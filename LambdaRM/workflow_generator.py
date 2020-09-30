@@ -9,6 +9,7 @@ class WorkflowGenerator():
     """
     def azure_params(
         self,
+        max_timestep=120,
         azure_file_path="azurefunctions-dataset2019/",
         memory_traces_file="sampled_memory_traces.csv",
         invocation_traces_file="sampled_invocation_traces.csv"
@@ -61,7 +62,7 @@ class WorkflowGenerator():
 
         # Create timetable based on invocation traces
         timetable_params = TimetableParameters(
-            max_timestep=120, 
+            max_timestep=max_timestep, 
             distribution_type="azure",
             azure_invocation_traces=invocation_traces
         )
@@ -135,10 +136,11 @@ class WorkflowGenerator():
         self, 
         default="azure",
         profile_params=None, 
-        timetable_params=None
+        timetable_params=None,
+        max_timestep=120,
     ):
         if default == "azure":
-            default_profile_params, default_timetable_params = self.azure_params()
+            default_profile_params, default_timetable_params = self.azure_params(max_timestep=max_timestep)
 
         if profile_params is None:
             profile_params = default_profile_params

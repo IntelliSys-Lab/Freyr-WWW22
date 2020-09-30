@@ -74,8 +74,8 @@ class Function():
         return avg_interval
 
     def get_avg_completion_time(self):
-        avg_completion_time, request_num, total_completion_time = self.request_record.get_avg_completion_time()
-        return avg_completion_time, request_num, total_completion_time
+        avg_completion_time, _, _ = self.request_record.get_avg_completion_time()
+        return avg_completion_time
     
     def get_is_cold_start(self):
         is_cold_start = self.request_record.get_is_cold_start()
@@ -186,7 +186,7 @@ class Request():
         couch_activations = couch_client["whisk_distributed_activations"]
         doc_request = couch_activations.get("guest/{}".format(self.request_id))
 
-        if doc_request is not None and len(doc_request["annotations"]) >= 5:
+        if doc_request is not None and len(doc_request["annotations"]) >= 4:
             result_dict[self.function_id][self.request_id]["is_done"] = True
             result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
             result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
