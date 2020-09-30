@@ -26,10 +26,8 @@ kafka0              ansible_host=192.168.196.65
 kafkas
 
 [invokers]
-invoker0            ansible_host=192.168.196.167 
-invoker1            ansible_host=192.168.196.234
-invoker2            ansible_host=192.168.196.32
-invoker3            ansible_host=192.168.196.44
+invoker0            ansible_host=192.168.196.32
+invoker1            ansible_host=192.168.196.44
 
 
 [all:vars]
