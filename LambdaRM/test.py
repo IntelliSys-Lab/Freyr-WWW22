@@ -30,14 +30,20 @@ def run_cmd(cmd):
 couch_activations = couch["whisk_distributed_activations"]
 couch_whisks = couch["whisk_distributed_whisks"]
 
-run_cmd("{} action invoke {} {}".format(WSK_CLI, "function0", "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"))
+# run_cmd("{} action invoke {} {}".format(WSK_CLI, "function0", "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"))
 
-doc_function = couch_whisks["guest/function0"]
+# doc_function = couch_whisks["guest/function0"]
 # print(doc_function)
-doc_function["limits"]["memory"] = 1
-couch_whisks.save(doc_function)
+# doc_function["limits"]["memory"] = 1
+# couch_whisks.save(doc_function)
 
-run_cmd("{} action invoke {} {}".format(WSK_CLI, "function0", "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"))
+doc_function = couch_activations["guest/1bc6cd95ca5e49c486cd95ca5e49c4ea"]
+if len(doc_function["annotations"]) >= 4:
+    for i in doc_function["annotations"]:
+        print(i)
+#1bc6cd95ca5e49c486cd95ca5e49c4ea
+
+# run_cmd("{} action invoke {} {}".format(WSK_CLI, "function0", "-p threads 2 -p calcs 5000000 -p sleep 0 -p loops 2 -p arraySize 1000000"))
 
 # activation_id = "fb886d9c540b43d2886d9c540b43d297"
 # activation_id = "de910bbc780f4ae3910bbc780f9ae311"

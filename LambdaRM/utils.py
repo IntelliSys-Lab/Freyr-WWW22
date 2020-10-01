@@ -35,6 +35,7 @@ class Function():
     def __init__(self, params):
         self.params = params
         self.function_id = self.params.function_id
+        self.sequence = self.params.sequence
 
         self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
@@ -55,6 +56,9 @@ class Function():
 
     def get_request_record(self):
         return self.request_record
+    
+    def get_sequence(self):
+        return self.sequence
 
     def get_cpu(self):
         return self.cpu
@@ -186,10 +190,17 @@ class Request():
         couch_activations = couch_client["whisk_distributed_activations"]
         doc_request = couch_activations.get("guest/{}".format(self.request_id))
 
-        if doc_request is not None and len(doc_request["annotations"]) >= 4:
-            result_dict[self.function_id][self.request_id]["is_done"] = True
-            result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
-            result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
+        if doc_request is not None and len(doc_request["annotations"]) >= 4: # Request is done
+            # Sequence request
+            if len(doc_request["annotations"]) == 4:
+                result_dict[self.function_id][self.request_id]["is_done"] = True
+                result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
+                result_dict[self.function_id][self.request_id]["is_timeout"] = False
+            # Normal request
+            else:
+                result_dict[self.function_id][self.request_id]["is_done"] = True
+                result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
+                result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
             
             if len(doc_request["annotations"]) == 6:
                 result_dict[self.function_id][self.request_id]["is_cold_start"] = True

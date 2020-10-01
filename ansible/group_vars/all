@@ -74,10 +74,10 @@ limits:
   # concurrentInvocations: "{{ limit_invocations_concurrent | default(30) }}"
   # firesPerMinute: "{{ limit_fires_per_minute | default(60) }}"
   # sequenceMaxLength: "{{ limit_sequence_max_length | default(50) }}"
-  invocationsPerMinute: "{{ limit_invocations_per_minute | default(1000) }}"
-  concurrentInvocations: "{{ limit_invocations_concurrent | default(1000) }}"
-  firesPerMinute: "{{ limit_fires_per_minute | default(1000) }}"
-  sequenceMaxLength: "{{ limit_sequence_max_length | default(1000) }}"
+  invocationsPerMinute: "{{ limit_invocations_per_minute | default(10000) }}"
+  concurrentInvocations: "{{ limit_invocations_concurrent | default(10000) }}"
+  firesPerMinute: "{{ limit_fires_per_minute | default(10000) }}"
+  sequenceMaxLength: "{{ limit_sequence_max_length | default(10000) }}"
 
 # Moved here to avoid recursions. Please do not use outside of controller-dict.
 __controller_ssl_keyPrefix: "controller-"

@@ -99,7 +99,15 @@ class LambdaRM():
                 function_index, resource, adjust = self.decode_action(act)
                 # if self.profile.function_profile[function_index].validate_resource_adjust(resource, adjust) is True:
                 #     self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
+
                 self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
+                # Set the sequence of this function as well
+                if self.profile.function_profile[function_index].get_sequence() is not None:
+                    sequence = self.profile.function_profile[function_index].get_sequence()
+                    for function_id in sequence:
+                        for function in self.profile.get_function_profile():
+                            if function_id == function.get_function_id():
+                                function.set_resource_adjust(resource, adjust)
             
             return False
         
@@ -227,6 +235,9 @@ class LambdaRM():
         # Update request cord of each function
         for function in self.profile.get_function_profile():
             function.get_request_record().update_request(done_request_dict[function.get_function_id()])
+            # if function.get_function_id() == "imageProcessSequence":
+            #     for request in function.get_request_record().get_total_request_record():
+            #         print("{}: {}".format(request.get_request_id(), request.get_completion_time()))
 
         return total_timeout, total_completion_time
                                         
@@ -840,7 +851,7 @@ class LambdaRM():
                     if timeout_num < min_timeout_num:
                         min_timeout_num = timeout_num
                         pg_agent.save(save_path)
-                    else:
+                    elif timeout_num == min_timeout_num:
                         if avg_completion_time < min_avg_completion_time:
                             min_avg_completion_time = avg_completion_time
                             pg_agent.save(save_path)

@@ -19,7 +19,8 @@ class FunctionParameters():
         cpu_least_hint=1,
         memory_least_hint=1,
         function_id=None,
-        invoke_params=None
+        invoke_params=None,
+        sequence=None,
     ):
         self.cpu_cap = cpu_cap
         self.memory_cap = memory_cap
@@ -27,6 +28,7 @@ class FunctionParameters():
         self.memory_least_hint = memory_least_hint
         self.function_id = function_id
         self.invoke_params = invoke_params
+        self.sequence = sequence
 
 class TimetableParameters():
     """

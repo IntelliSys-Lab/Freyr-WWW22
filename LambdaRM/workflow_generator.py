@@ -48,13 +48,53 @@ class WorkflowGenerator():
         function_params = []
 
         for function_id in function_params_dict.keys():
-            param = FunctionParameters(
-                cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
-                memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
-                cpu_cap=function_params_dict[function_id]["cpu_cap"],
-                memory_cap=function_params_dict[function_id]["memory_cap"],
-                function_id=function_id
-            )
+            if function_id == "imageProcessSequence":
+                sequence = [
+                    "storeImageMetadata", 
+                    "thumbnail", 
+                    "handler", 
+                    "transformMetadata", 
+                    "extractImageMetadata"
+                ]
+
+                param = FunctionParameters(
+                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
+                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
+                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
+                    memory_cap=function_params_dict[function_id]["memory_cap"],
+                    function_id=function_id,
+                    sequence=sequence
+                )
+            elif function_id == "alexa-frontend":
+                sequence = [
+                    "alexa-smarthome", 
+                    "alexa-home-plug", 
+                    "alexa-home-air-conditioning", 
+                    "alexa-home-tv", 
+                    "alexa-home-light",
+                    "alexa-home-door",
+                    "alexa-reminder",
+                    "alexa-fact",
+                    "alexa-interact",
+                ]
+                
+                param = FunctionParameters(
+                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
+                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
+                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
+                    memory_cap=function_params_dict[function_id]["memory_cap"],
+                    function_id=function_id,
+                    sequence=sequence
+                )
+            else:
+                param = FunctionParameters(
+                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
+                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
+                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
+                    memory_cap=function_params_dict[function_id]["memory_cap"],
+                    function_id=function_id,
+                    sequence=None
+                )
             
             function_params.append(param)
 

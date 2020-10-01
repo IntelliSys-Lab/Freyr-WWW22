@@ -40,37 +40,37 @@ def launch():
     
     # Fixed RM
     lambda_rm.fixed_rm(
-        max_episode=10,
-        plot_prefix_name="FixedRM" + file_suffix,
+        max_episode=1,
+        plot_prefix_name="FixedRM",
         save_plot=True,
         show_plot=False
     )
 
-    # Greedy RM
-    lambda_rm.greedy_rm(
-        max_episode=10,
-        plot_prefix_name="GreedyRM" + file_suffix,
-        save_plot=True,
-        show_plot=False
-    )
+    # # Greedy RM
+    # lambda_rm.greedy_rm(
+    #     max_episode=1,
+    #     plot_prefix_name="GreedyRM",
+    #     save_plot=True,
+    #     show_plot=False
+    # )
 
-    # Train
-    lambda_rm.train(
-        max_episode=100,
-        save_path="ckpt/best_model.pth",
-        plot_prefix_name="LambdaRM_train",
-        save_plot=True,
-        show_plot=False
-    )
+    # # Train
+    # lambda_rm.train(
+    #     max_episode=150,
+    #     save_path="ckpt/best_model.pth",
+    #     plot_prefix_name="LambdaRM_train",
+    #     save_plot=True,
+    #     show_plot=False
+    # )
 
-    # Eval
-    lambda_rm.eval(
-        max_episode=10,
-        checkpoint_path="ckpt/best_model.pth",
-        plot_prefix_name="LambdaRM_eval",
-        save_plot=True,
-        show_plot=False,
-    )
+    # # Eval
+    # lambda_rm.eval(
+    #     max_episode=10,
+    #     checkpoint_path="ckpt/best_model.pth",
+    #     plot_prefix_name="LambdaRM_eval",
+    #     save_plot=True,
+    #     show_plot=False,
+    # )
 
 
 if __name__ == "__main__":
