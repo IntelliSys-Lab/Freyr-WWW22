@@ -28,14 +28,14 @@ class LambdaRM():
         couch_password = "some_passw0rd",
         couch_host = "192.168.196.65",
         couch_port = "5984",
-        n_invoker=4,
         cool_down=60,
         interval_limit=None,
         timeout_penalty=60,
         decay_factor=0.8,
         reward_type="actual_completion_time"
     ):
-        self.n_invoker = n_invoker
+        # Get total number of invokers
+        self.n_invoker = run_cmd('cat ../ansible/environments/distributed/hosts | grep "invoker" | grep -v "\[invokers\]" | wc -l')
         self.cool_down = cool_down
         self.timeout_penalty = timeout_penalty
         self.decay_factor = decay_factor

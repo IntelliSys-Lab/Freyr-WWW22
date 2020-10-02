@@ -28,7 +28,6 @@ def launch():
         couch_password = "some_passw0rd",
         couch_host = "192.168.196.65",
         couch_port = "5984",
-        n_invoker=2,
         # cool_down="restart",
         cool_down=60,
         interval_limit=1,
