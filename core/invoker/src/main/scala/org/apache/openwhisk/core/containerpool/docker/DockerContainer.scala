@@ -46,7 +46,7 @@ object DockerContainer {
   private val byteStringSentinel = ByteString(Container.ACTIVATION_LOG_SENTINEL)
 
   // Convert cpu limit from Int representation to docker option --cpu-shares
-  def convertToCpuShares(memory: Int): Int = max((1024 / (16384 / memory)).toInt, 2)
+  def convertToCpuShares(memory: Int): Int = max((1024 / (8192 / memory)).toInt, 2)
 
   // Convert cpu limit from Int representation to docker option --cpus
   def convertToCpus(cpu: Int): Double = cpu * 0.25
@@ -95,10 +95,10 @@ object DockerContainer {
     // NOTE: --dns-option on modern versions of docker, but is --dns-opt on docker 1.12
     val dnsOptString = if (docker.clientVersion.startsWith("1.12")) { "--dns-opt" } else { "--dns-option" }
     val args = Seq(
-      "--cpu-shares",
-      convertToCpuShares(memory.toMB.toInt).toString,
-      // "--cpus", // Use --cpus to regulate CPU resource
-      // convertToCpus(cpuShares).toString,
+      // "--cpu-shares",
+      // convertToCpuShares(memory.toMB.toInt).toString,
+      "--cpus", // Use --cpus to regulate cpu resource
+      convertToCpus(cpuShares).toString,
       "--memory",
       s"${memory.toMB}m",
       "--memory-swap",
