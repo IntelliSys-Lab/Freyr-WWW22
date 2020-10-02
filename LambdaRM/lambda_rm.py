@@ -34,14 +34,15 @@ class LambdaRM():
         decay_factor=0.8,
         reward_type="actual_completion_time"
     ):
-        # Get total number of invokers
-        self.n_invoker = run_cmd('cat ../ansible/environments/distributed/hosts | grep "invoker" | grep -v "\[invokers\]" | wc -l')
         self.cool_down = cool_down
         self.timeout_penalty = timeout_penalty
         self.decay_factor = decay_factor
         self.reward_type = reward_type
         self.profile = profile
         self.timetable = timetable
+
+        # Get total number of invokers
+        self.n_invoker = run_cmd('cat ../ansible/environments/distributed/hosts | grep "invoker" | grep -v "\[invokers\]" | wc -l')
 
         # Calculate state and action space 
         self.state_space = 1 + 3 * self.n_invoker + 5 * self.profile.get_size()
@@ -798,7 +799,7 @@ class LambdaRM():
             observation_dim=self.state_space,
             action_dim=self.action_space,
             hidden_dims=[64, 32],
-            learning_rate=0.005,
+            learning_rate=0.001,
             discount_factor=1,
             ppo_clip=0.2,
             ppo_steps=5
