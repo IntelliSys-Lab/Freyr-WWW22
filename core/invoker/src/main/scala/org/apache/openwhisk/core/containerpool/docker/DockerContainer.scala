@@ -26,6 +26,7 @@ import akka.stream.scaladsl.Framing.FramingException
 import spray.json._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.math.max
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
 import org.apache.openwhisk.core.containerpool._
@@ -44,8 +45,11 @@ object DockerContainer {
 
   private val byteStringSentinel = ByteString(Container.ACTIVATION_LOG_SENTINEL)
 
-  // Convert cpu limit from Int representation to actual Float
-  def convertCpu(cpu: Int): Double = cpu * 0.25
+  // Convert cpu limit from Int representation to docker option --cpu-shares
+  def convertToCpuShares(memory: Int): Int = max((1024 / (16384 / memory)).toInt, 2)
+
+  // Convert cpu limit from Int representation to docker option --cpus
+  def convertToCpus(cpu: Int): Double = cpu * 0.25
 
   /**
    * Creates a container running on a docker daemon.
@@ -91,9 +95,10 @@ object DockerContainer {
     // NOTE: --dns-option on modern versions of docker, but is --dns-opt on docker 1.12
     val dnsOptString = if (docker.clientVersion.startsWith("1.12")) { "--dns-opt" } else { "--dns-option" }
     val args = Seq(
-      // "--cpu-shares",
-      "--cpus", // Use --cpus to regulate CPU resource
-      convertCpu(cpuShares).toString,
+      "--cpu-shares",
+      convertToCpuShares(memory.toMB.toInt).toString,
+      // "--cpus", // Use --cpus to regulate CPU resource
+      // convertToCpus(cpuShares).toString,
       "--memory",
       s"${memory.toMB}m",
       "--memory-swap",

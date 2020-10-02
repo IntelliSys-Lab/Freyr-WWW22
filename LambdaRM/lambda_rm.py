@@ -580,7 +580,7 @@ class LambdaRM():
         self.log_trends(
             rm_name=rm,
             reward_trend=reward_trend,
-            overwrite=True,
+            overwrite=False,
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
@@ -1056,18 +1056,21 @@ class LambdaRM():
         # Log reward trend
         logger = self.logger_wrapper.get_logger("RewardTrends", overwrite)
         logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(reward) for reward in reward_trend))
 
         # Log avg completion time trend
         logger = self.logger_wrapper.get_logger("AvgCompletionTimeTrends", overwrite)
         logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_trend))
 
         # Log avg completion time per function trend 
         logger = self.logger_wrapper.get_logger("AvgCompletionTimePerFunctionTrends", overwrite)
         logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug("")
         for function_id in avg_completion_time_per_function_trend.keys():
@@ -1077,6 +1080,7 @@ class LambdaRM():
         # Log timeout number trend
         logger = self.logger_wrapper.get_logger("TimeoutNumTrends", overwrite)
         logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(timeout_num) for timeout_num in timeout_num_trend))
 
@@ -1084,5 +1088,6 @@ class LambdaRM():
         if loss_trend is not None:
             logger = self.logger_wrapper.get_logger("LossTrends", overwrite)
             logger.debug("")
+            logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
             logger.debug("{}:".format(rm_name))
             logger.debug(','.join(str(loss) for loss in loss_trend))
