@@ -7,7 +7,7 @@ import multiprocessing
 from logger import Logger
 from plotter import Plotter
 from ppo2_agent import PPO2Agent
-from utils import SystemTime, Request
+from utils import SystemTime, Request, run_cmd
 
 
 
@@ -29,14 +29,14 @@ class LambdaRM():
         couch_host = "192.168.196.65",
         couch_port = "5984",
         n_invoker=4,
-        keep_alive_window=60,
+        cool_down=60,
         interval_limit=None,
         timeout_penalty=60,
         decay_factor=0.8,
         reward_type="actual_completion_time"
     ):
         self.n_invoker = n_invoker
-        self.keep_alive_window = keep_alive_window
+        self.cool_down = cool_down
         self.timeout_penalty = timeout_penalty
         self.decay_factor = decay_factor
         self.reward_type = reward_type
@@ -240,6 +240,13 @@ class LambdaRM():
             #         print("{}: {}".format(request.get_request_id(), request.get_completion_time()))
 
         return total_timeout, total_completion_time
+
+    def cool_down_openwhisk(self):
+        if self.cool_down == "restart":
+            restart_cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
+            run_cmd(restart_cmd)
+        else:
+            time.sleep(self.cool_down)
                                         
     def get_n_undone_request_from_profile(self):
         n_undone_request = 0
@@ -549,8 +556,8 @@ class LambdaRM():
                 
                 observation = next_observation
 
-            # Cool down invokers
-            time.sleep(self.keep_alive_window)
+            # Cool down OpenWhisk
+            self.cool_down_openwhisk()
         
         # Plot each episode 
         plotter = Plotter()
@@ -739,8 +746,8 @@ class LambdaRM():
                     
                     break
             
-            # Cool down invokers
-            time.sleep(self.keep_alive_window)
+            # Cool down OpenWhisk
+            self.cool_down_openwhisk()
         
         # Plot each episode 
         plotter = Plotter()
@@ -883,8 +890,8 @@ class LambdaRM():
                 
                 observation = next_observation
 
-            # Cool down invokers
-            time.sleep(self.keep_alive_window)
+            # Cool down OpenWhisk
+            self.cool_down_openwhisk()
         
         # Plot each episode 
         plotter = Plotter()
@@ -1003,8 +1010,8 @@ class LambdaRM():
                 
                 observation = next_observation
 
-            # Cool down invokers
-            time.sleep(self.keep_alive_window)
+            # Cool down OpenWhisk
+            self.cool_down_openwhisk()
         
         # Plot each episode 
         plotter = Plotter()

@@ -29,7 +29,7 @@ def launch():
         couch_host = "192.168.196.65",
         couch_port = "5984",
         n_invoker=2,
-        keep_alive_window=60,
+        keep_alive_window="restart",
         interval_limit=1,
         timeout_penalty=1000,
         decay_factor=0.9,
@@ -38,17 +38,17 @@ def launch():
         timetable=timetable,
     )
     
-    # Fixed RM
-    lambda_rm.fixed_rm(
-        max_episode=1,
-        plot_prefix_name="FixedRM",
-        save_plot=True,
-        show_plot=False
-    )
+    # # Fixed RM
+    # lambda_rm.fixed_rm(
+    #     max_episode=10,
+    #     plot_prefix_name="FixedRM",
+    #     save_plot=True,
+    #     show_plot=False
+    # )
 
     # # Greedy RM
     # lambda_rm.greedy_rm(
-    #     max_episode=1,
+    #     max_episode=10,
     #     plot_prefix_name="GreedyRM",
     #     save_plot=True,
     #     show_plot=False
@@ -63,14 +63,14 @@ def launch():
     #     show_plot=False
     # )
 
-    # # Eval
-    # lambda_rm.eval(
-    #     max_episode=10,
-    #     checkpoint_path="ckpt/best_model.pth",
-    #     plot_prefix_name="LambdaRM_eval",
-    #     save_plot=True,
-    #     show_plot=False,
-    # )
+    # Eval
+    lambda_rm.eval(
+        max_episode=10,
+        checkpoint_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_eval",
+        save_plot=True,
+        show_plot=False,
+    )
 
 
 if __name__ == "__main__":
