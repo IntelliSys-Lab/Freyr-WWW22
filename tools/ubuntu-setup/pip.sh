@@ -23,3 +23,4 @@ sudo apt-get install -y python-pip
 sudo pip install argcomplete
 sudo pip install couchdb
 sudo pip install redis
+sudo pip install psutil
