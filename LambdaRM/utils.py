@@ -361,6 +361,7 @@ class ResourceUtilsRecord():
         self.n_invoker = n_invoker
 
         self.record = {}
+
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
             self.record[invoker] = {}
@@ -369,6 +370,7 @@ class ResourceUtilsRecord():
             self.record[invoker]["avg_cpu_util"] = 0
             self.record[invoker]["avg_memory_util"] = 0
         
+        self.record["avg_invoker"] = {}
         self.record["avg_invoker"]["cpu_util"] = []
         self.record["avg_invoker"]["memory_util"] = []
         self.record["avg_invoker"]["avg_cpu_util"] = 0
@@ -404,6 +406,7 @@ class ResourceUtilsRecord():
 
     def reset(self):
         self.record = {}
+        
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
             self.record[invoker] = {}
@@ -411,6 +414,12 @@ class ResourceUtilsRecord():
             self.record[invoker]["memory_util"] = []
             self.record[invoker]["avg_cpu_util"] = 0
             self.record[invoker]["avg_memory_util"] = 0
+
+        self.record["avg_invoker"] = {}
+        self.record["avg_invoker"]["cpu_util"] = []
+        self.record["avg_invoker"]["memory_util"] = []
+        self.record["avg_invoker"]["avg_cpu_util"] = 0
+        self.record["avg_invoker"]["avg_memory_util"] = 0
 
         
     

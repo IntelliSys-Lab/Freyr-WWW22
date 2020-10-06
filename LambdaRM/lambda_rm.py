@@ -510,9 +510,7 @@ class LambdaRM():
         save_plot=False,
         show_plot=True,
     ):
-        # Set up logger
         rm = "FixedRM"
-        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Trends recording
         reward_trend = []
@@ -529,6 +527,9 @@ class LambdaRM():
             actual_time = 0
             system_time = 0
             reward_sum = 0
+
+            # Set up logger
+            logger = self.logger_wrapper.get_logger(rm, True)
             
             while True:
                 actual_time = actual_time + 1
@@ -643,9 +644,7 @@ class LambdaRM():
                             
             return actions
 
-        # Set up logger
         rm = "GreedyRM"
-        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Record trends
         reward_trend = []
@@ -664,6 +663,9 @@ class LambdaRM():
             
             action = self.action_space - 1
             
+            # Set up logger
+            logger = self.logger_wrapper.get_logger(rm, True)
+
             while True:
                 actual_time = actual_time + 1
                 observation, reward, done, info = self.step(action)
@@ -816,9 +818,7 @@ class LambdaRM():
         save_plot=False,
         show_plot=True,
     ):
-        # Set up logger
         rm = "LambdaRM_train"
-        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -852,6 +852,9 @@ class LambdaRM():
             actual_time = 0
             system_time = 0
             reward_sum = 0
+
+            # Set up logger
+            logger = self.logger_wrapper.get_logger(rm, True)
             
             while True:
                 actual_time = actual_time + 1
@@ -961,9 +964,7 @@ class LambdaRM():
         save_plot=False,
         show_plot=True,
     ):
-        # Set up logger
         rm = "LambdaRM_eval"
-        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -996,6 +997,9 @@ class LambdaRM():
             system_time = 0
             reward_sum = 0
             
+            # Set up logger
+            logger = self.logger_wrapper.get_logger(rm, True)
+
             while True:
                 actual_time = actual_time + 1
                 action, value_pred, log_prob = pg_agent.choose_action(observation)
