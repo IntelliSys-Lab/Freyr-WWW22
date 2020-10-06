@@ -23,4 +23,4 @@ cd ../../../ServerlessBench/Testcase4-Application-breakdown
 # Alexa skills
 ./deploy.sh --alexa
 
-cd ../../openwhisk/ansible
+cd ../../openwhisk/LambdaRM

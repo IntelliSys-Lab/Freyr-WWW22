@@ -27,21 +27,29 @@ class WorkflowGenerator():
         for function_id in function_params_dict.keys():
             for _, row in memory_traces.iterrows():
                 if row["FunctionId"] == function_id:
-                    if row["AverageAllocatedMb"] < 256:
-                        least_hint = 1
-                        function_params_dict[function_id]["memory_least_hint"] = least_hint
-                        function_params_dict[function_id]["cpu_least_hint"] = least_hint
-                    elif row["AverageAllocatedMb"] > 2048:
-                        least_hint = 8
-                        function_params_dict[function_id]["memory_least_hint"] = least_hint
-                        function_params_dict[function_id]["cpu_least_hint"] = least_hint
-                    else:
-                        least_hint = int(row["AverageAllocatedMb"]/256) + 1
-                        function_params_dict[function_id]["memory_least_hint"] = least_hint
-                        function_params_dict[function_id]["cpu_least_hint"] = least_hint
+                    # # Least hints provided by users
+                    # if row["AverageAllocatedMb"] < 256:
+                    #     least_hint = 1
+                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
+                    # elif row["AverageAllocatedMb"] > 2048:
+                    #     least_hint = 8
+                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
+                    # else:
+                    #     least_hint = int(row["AverageAllocatedMb"]/256) + 1
+                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
 
+                    # No hint, information-agnostic
+                    function_params_dict[function_id]["memory_least_hint"] = 1
+                    function_params_dict[function_id]["cpu_least_hint"] = 1
                     function_params_dict[function_id]["memory_cap"] = 8
                     function_params_dict[function_id]["cpu_cap"] = 8
+
+                    saturation_point = row["SaturationPoint"] / 256
+                    function_params_dict[function_id]["memory_saturation_point"] = saturation_point
+                    function_params_dict[function_id]["cpu_saturation_point"] = saturation_point
                     break
 
         # Create Profile paramters
@@ -56,15 +64,6 @@ class WorkflowGenerator():
                     "transformMetadata", 
                     "extractImageMetadata"
                 ]
-
-                param = FunctionParameters(
-                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
-                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
-                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
-                    memory_cap=function_params_dict[function_id]["memory_cap"],
-                    function_id=function_id,
-                    sequence=sequence
-                )
             elif function_id == "alexa-frontend":
                 sequence = [
                     "alexa-smarthome", 
@@ -77,24 +76,19 @@ class WorkflowGenerator():
                     "alexa-fact",
                     "alexa-interact",
                 ]
-                
-                param = FunctionParameters(
-                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
-                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
-                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
-                    memory_cap=function_params_dict[function_id]["memory_cap"],
-                    function_id=function_id,
-                    sequence=sequence
-                )
             else:
-                param = FunctionParameters(
-                    cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
-                    memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
-                    cpu_cap=function_params_dict[function_id]["cpu_cap"],
-                    memory_cap=function_params_dict[function_id]["memory_cap"],
-                    function_id=function_id,
-                    sequence=None
-                )
+                sequence = None
+            
+            param = FunctionParameters(
+                cpu_least_hint=function_params_dict[function_id]["cpu_least_hint"],
+                memory_least_hint=function_params_dict[function_id]["memory_least_hint"],
+                cpu_cap=function_params_dict[function_id]["cpu_cap"],
+                memory_cap=function_params_dict[function_id]["memory_cap"],
+                cpu_saturation_point=function_params_dict[function_id]["cpu_saturation_point"],
+                memory_saturation_point=function_params_dict[function_id]["memory_saturation_point"],
+                function_id=function_id,
+                sequence=sequence
+            )
             
             function_params.append(param)
 
@@ -116,7 +110,7 @@ class WorkflowGenerator():
         # Hardcoded parameters of functions
         for param in function_params:
             if param.function_id == "alu":
-                param.invoke_params = "-p loopTime 10000000 -p parallelIndex 100" # 64: 1.3 sec, 1: 10 sec
+                param.invoke_params = "-p loopTime 5000000 -p parallelIndex 1" # 64: 1.4 sec, 1: 10.1 sec
             elif param.function_id == "ms":
                 param.invoke_params = "-p listSize 100000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
             elif param.function_id == "gd":
@@ -129,10 +123,18 @@ class WorkflowGenerator():
                 param.invoke_params = "-p utter 'open smarthome to I love Taylor Swift'" # 64: 4 sec, 1: 9.6 sec
             
             function = Function(param)
+
+            # # Initially set as hinted
+            # function.set_function(
+            #     cpu=param.cpu_least_hint, 
+            #     memory=param.memory_least_hint
+            # ) 
+
+            # Initially set as hinted
             function.set_function(
-                cpu=param.cpu_least_hint, 
-                memory=param.memory_least_hint
-            ) # Initially set as hinted
+                cpu=param.cpu_saturation_point, 
+                memory=param.memory_saturation_point
+            ) 
             
             function_list.append(function)
         

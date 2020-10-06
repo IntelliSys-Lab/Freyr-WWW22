@@ -18,6 +18,8 @@ class FunctionParameters():
         memory_cap=8,
         cpu_least_hint=1,
         memory_least_hint=1,
+        cpu_saturation_point=4,
+        memory_saturation_point=4,
         function_id=None,
         invoke_params=None,
         sequence=None,
@@ -26,6 +28,8 @@ class FunctionParameters():
         self.memory_cap = memory_cap
         self.cpu_least_hint = cpu_least_hint
         self.memory_least_hint = memory_least_hint
+        self.cpu_saturation_point = cpu_saturation_point
+        self.memory_saturation_point = memory_saturation_point
         self.function_id = function_id
         self.invoke_params = invoke_params
         self.sequence = sequence

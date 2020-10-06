@@ -7,7 +7,7 @@ import multiprocessing
 from logger import Logger
 from plotter import Plotter
 from ppo2_agent import PPO2Agent
-from utils import SystemTime, Request, run_cmd
+from utils import SystemTime, Request, run_cmd, ResourceUtilsRecord
 
 
 
@@ -42,8 +42,8 @@ class LambdaRM():
         self.timetable = timetable
 
         # Get total number of invokers
-        self.n_invoker = run_cmd('cat ../ansible/environments/distributed/hosts | grep "invoker" | grep -v "\[invokers\]" | wc -l')
-
+        self.n_invoker = int(run_cmd('cat ../ansible/environments/distributed/hosts | grep "invoker" | grep -v "\[invokers\]" | wc -l'))
+        
         # Calculate state and action space 
         self.state_space = 1 + 3 * self.n_invoker + 5 * self.profile.get_size()
         self.action_space = 1 + 4 * self.profile.get_size()
@@ -67,6 +67,9 @@ class LambdaRM():
 
         # Set up logger module
         self.logger_wrapper = Logger()
+
+        # Set up resource utils record
+        self.resource_utils_record = ResourceUtilsRecord(self.n_invoker)
 
     #
     # Interfaces with OpenWhisk
@@ -246,6 +249,7 @@ class LambdaRM():
         if self.cool_down == "restart":
             restart_cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
             run_cmd(restart_cmd)
+            time.sleep(30)
         else:
             time.sleep(self.cool_down)
                                         
@@ -301,6 +305,17 @@ class LambdaRM():
             request_record_dict[function.function_id] = function.get_request_record().get_total_request_record()
 
         return request_record_dict
+
+    def get_resource_utils_record(self):
+        self.resource_utils_record.calculate_avg_resource_utils()
+        return self.resource_utils_record.get_record()
+
+    def get_resource_utils(self):
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+            cpu_util = float(self.redis_client.hget(invoker, "cpu_util"))
+            memory_util = float(self.redis_client.hget(invoker, "memory_util"))
+            self.resource_utils_record.put_resource_utils(invoker, cpu_util, memory_util)
 
     def get_observation(self):
         # Controller state
@@ -411,7 +426,8 @@ class LambdaRM():
             "avg_completion_time_per_function": self.get_avg_completion_time_per_function(),
             "timeout_num": self.get_total_timeout_num(),
             "request_record_dict": self.get_request_record_dict(),
-            "system_runtime": self.system_time.get_system_runtime()
+            "system_runtime": self.system_time.get_system_runtime(),
+            "resource_utils_record": self.get_resource_utils_record()
         }
 
         return info
@@ -458,6 +474,9 @@ class LambdaRM():
                 interval=interval,
                 total_completion_time=total_completion_time
             )
+
+            # Get resource utils
+            self.get_resource_utils()
             
             # Reset resource adjust direction for each function 
             for function in self.profile.function_profile:
@@ -474,6 +493,7 @@ class LambdaRM():
     def reset(self):
         self.system_time.reset()
         self.profile.reset()
+        self.resource_utils_record.reset()
         
         observation = self.get_observation()
         
@@ -552,6 +572,9 @@ class LambdaRM():
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+
+                    resource_utils_record = info["resource_utils_record"]
+                    self.log_resource_utils(False, rm, episode, resource_utils_record)
                     
                     break
                 
@@ -744,6 +767,9 @@ class LambdaRM():
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+
+                    resource_utils_record = info["resource_utils_record"]
+                    self.log_resource_utils(False, rm, episode, resource_utils_record)
                     
                     break
             
@@ -799,7 +825,7 @@ class LambdaRM():
             observation_dim=self.state_space,
             action_dim=self.action_space,
             hidden_dims=[64, 32],
-            learning_rate=0.001,
+            learning_rate=0.002,
             discount_factor=1,
             ppo_clip=0.2,
             ppo_steps=5
@@ -886,6 +912,9 @@ class LambdaRM():
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+
+                    # resource_utils_record = info["resource_utils_record"]
+                    # self.log_resource_utils(False, rm, episode, resource_utils_record)
                     
                     break
                 
@@ -941,7 +970,7 @@ class LambdaRM():
             observation_dim=self.state_space,
             action_dim=self.action_space,
             hidden_dims=[64, 32],
-            learning_rate=0.005,
+            learning_rate=0.002,
             discount_factor=1,
             ppo_clip=0.2,
             ppo_steps=5
@@ -1006,6 +1035,9 @@ class LambdaRM():
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+
+                    resource_utils_record = info["resource_utils_record"]
+                    self.log_resource_utils(False, rm, episode, resource_utils_record)
                     
                     break
                 
@@ -1057,6 +1089,10 @@ class LambdaRM():
         # Log reward trend
         logger = self.logger_wrapper.get_logger("RewardTrends", overwrite)
         logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("")
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(reward) for reward in reward_trend))
@@ -1064,12 +1100,20 @@ class LambdaRM():
         # Log avg completion time trend
         logger = self.logger_wrapper.get_logger("AvgCompletionTimeTrends", overwrite)
         logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("")
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(avg_completion_time) for avg_completion_time in avg_completion_time_trend))
 
         # Log avg completion time per function trend 
         logger = self.logger_wrapper.get_logger("AvgCompletionTimePerFunctionTrends", overwrite)
+        logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
         logger.debug("")
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
@@ -1081,6 +1125,10 @@ class LambdaRM():
         # Log timeout number trend
         logger = self.logger_wrapper.get_logger("TimeoutNumTrends", overwrite)
         logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("")
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(timeout_num) for timeout_num in timeout_num_trend))
@@ -1089,6 +1137,49 @@ class LambdaRM():
         if loss_trend is not None:
             logger = self.logger_wrapper.get_logger("LossTrends", overwrite)
             logger.debug("")
+            logger.debug("**********")
+            logger.debug("**********")
+            logger.debug("**********")
+            logger.debug("")
             logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
             logger.debug("{}:".format(rm_name))
             logger.debug(','.join(str(loss) for loss in loss_trend))
+
+    def log_resource_utils(
+        self, 
+        overwrite,
+        rm_name,
+        episode,
+        record
+    ):
+        logger = self.logger_wrapper.get_logger("ResourceUtils", overwrite)
+        logger.debug("")
+        logger.debug("**********")
+        logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+        logger.debug("{} episode {}:".format(rm_name, episode))
+
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+
+            logger.debug(invoker)
+            logger.debug("cpu_util")
+            logger.debug(','.join(str(cpu_util) for cpu_util in record[invoker]["cpu_util"]))
+            logger.debug("memory_util")
+            logger.debug(','.join(str(memory_util) for memory_util in record[invoker]["memory_util"]))
+            logger.debug("avg_cpu_util")
+            logger.debug(record[invoker]["avg_cpu_util"])
+            logger.debug("avg_memory_util")
+            logger.debug(record[invoker]["avg_memory_util"])
+            logger.debug("")
+
+        logger.debug("avg_invoker")
+        logger.debug("cpu_util")
+        logger.debug(','.join(str(cpu_util) for cpu_util in record["avg_invoker"]["cpu_util"]))
+        logger.debug("memory_util")
+        logger.debug(','.join(str(memory_util) for memory_util in record["avg_invoker"]["memory_util"]))
+        logger.debug("avg_cpu_util")
+        logger.debug(record["avg_invoker"]["avg_cpu_util"])
+        logger.debug("avg_memory_util")
+        logger.debug(record["avg_invoker"]["avg_memory_util"])
+

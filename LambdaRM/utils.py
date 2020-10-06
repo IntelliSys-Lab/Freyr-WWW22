@@ -39,7 +39,7 @@ class Function():
 
         self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
-        self.is_resource_changed = False
+        self.is_resource_changed = True
     
     def set_function(self, cpu=1, memory=1):
         self.cpu = cpu
@@ -208,7 +208,7 @@ class Request():
                 result_dict[self.function_id][self.request_id]["is_cold_start"] = False
         else:
             # Manually rule out timeout requests
-            if system_runtime - self.invoke_time > 60:
+            if system_runtime - self.invoke_time > 70:
                 result_dict[self.function_id][self.request_id]["is_done"] = True
                 result_dict[self.function_id][self.request_id]["is_timeout"] = True
             else:
@@ -350,6 +350,67 @@ class RequestRecord():
         self.success_request_record = []
         self.undone_request_record = []
         self.timeout_request_record = []
+
+
+class ResourceUtilsRecord():
+    """
+    Recording of CPU and memory utilizations per invoker in sec
+    """
+
+    def __init__(self, n_invoker):
+        self.n_invoker = n_invoker
+
+        self.record = {}
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+            self.record[invoker] = {}
+            self.record[invoker]["cpu_util"] = []
+            self.record[invoker]["memory_util"] = []
+            self.record[invoker]["avg_cpu_util"] = 0
+            self.record[invoker]["avg_memory_util"] = 0
+        
+        self.record["avg_invoker"]["cpu_util"] = []
+        self.record["avg_invoker"]["memory_util"] = []
+        self.record["avg_invoker"]["avg_cpu_util"] = 0
+        self.record["avg_invoker"]["avg_memory_util"] = 0
+
+    def put_resource_utils(self, invoker, cpu_util, memory_util):
+        self.record[invoker]["cpu_util"].append(cpu_util)
+        self.record[invoker]["memory_util"].append(memory_util)
+
+    def calculate_avg_resource_utils(self):
+        cpu_util_tmp_list = []
+        memory_util_tmp_list = []
+
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+            self.record[invoker]["avg_cpu_util"] = np.mean(self.record[invoker]["cpu_util"])
+            self.record[invoker]["avg_memory_util"] = np.mean(self.record[invoker]["memory_util"])
+
+            if i == 0:
+                cpu_util_tmp_list = []
+                memory_util_tmp_list = []
+
+            cpu_util_tmp_list.append(self.record[invoker]["cpu_util"])
+            memory_util_tmp_list.append(self.record[invoker]["memory_util"])
+
+        self.record["avg_invoker"]["cpu_util"].append(np.mean(cpu_util_tmp_list))
+        self.record["avg_invoker"]["memory_util"].append(np.mean(memory_util_tmp_list))
+        self.record["avg_invoker"]["avg_cpu_util"] = np.mean(self.record["avg_invoker"]["cpu_util"])
+        self.record["avg_invoker"]["avg_memory_util"] = np.mean(self.record["avg_invoker"]["memory_util"])
+    
+    def get_record(self):
+        return self.record
+
+    def reset(self):
+        self.record = {}
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+            self.record[invoker] = {}
+            self.record[invoker]["cpu_util"] = []
+            self.record[invoker]["memory_util"] = []
+            self.record[invoker]["avg_cpu_util"] = 0
+            self.record[invoker]["avg_memory_util"] = 0
 
         
     
