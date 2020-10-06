@@ -110,7 +110,7 @@ class WorkflowGenerator():
         # Hardcoded parameters of functions
         for param in function_params:
             if param.function_id == "alu":
-                param.invoke_params = "-p loopTime 5000000 -p parallelIndex 1" # 64: 1.4 sec, 1: 10.1 sec
+                param.invoke_params = "-p loopTime 500000 -p parallelIndex 100" # 64: 0.6 sec, 1: 8.3 sec
             elif param.function_id == "ms":
                 param.invoke_params = "-p listSize 100000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
             elif param.function_id == "gd":

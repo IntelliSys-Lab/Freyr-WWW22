@@ -30,6 +30,12 @@ invoker0            ansible_host=192.168.196.167
 invoker1            ansible_host=192.168.196.234
 invoker2            ansible_host=192.168.196.32
 invoker3            ansible_host=192.168.196.44
+invoker4            ansible_host=192.168.196.233
+invoker5            ansible_host=192.168.196.115
+invoker6            ansible_host=192.168.196.66
+invoker7            ansible_host=192.168.196.216
+invoker8            ansible_host=192.168.196.154
+invoker9            ansible_host=192.168.196.126
 
 
 [all:vars]
