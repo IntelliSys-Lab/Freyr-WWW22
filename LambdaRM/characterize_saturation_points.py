@@ -117,10 +117,10 @@ def characterize_apps(file_name, app_invoke_params):
 if __name__ == "__main__":
     file_name = "ApplicationSaturationPoints"
     app_invoke_params = {}
-    app_invoke_params["alu"] = "-p loopTime 5000000 -p parallelIndex 1"
-    app_invoke_params["ms"] = "-p listSize 100000 -p loopTime 1"
-    app_invoke_params["gd"] = "-p x_row 20 -p x_col 20 -p w_row 50 -p loopTime 1"
-    app_invoke_params["knn"] = "-p datasetSize 1000 -p featureDim 100 -p k 3 -p loopTime 1"
+    app_invoke_params["alu"] = "-p loopTime 100000000 -p parallelIndex 100"
+    app_invoke_params["ms"] = "-p listSize 300000 -p loopTime 1"
+    app_invoke_params["gd"] = "-p x_row 50 -p x_col 50 -p w_row 50 -p loopTime 1"
+    app_invoke_params["knn"] = "-p datasetSize 10000 -p featureDim 1000 -p k 3 -p loopTime 1"
     app_invoke_params["imageProcessSequence"] = "-p imageName test.jpg"
     app_invoke_params["alexa-frontend"] = "-p utter 'open smarthome to I love Taylor Swift'"
 
