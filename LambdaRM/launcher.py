@@ -28,8 +28,8 @@ def launch():
         couch_password = "some_passw0rd",
         couch_host = "192.168.196.65",
         couch_port = "5984",
-        cool_down="restart",
-        # cool_down=70,
+        # cool_down="refresh",
+        cool_down=65,
         interval_limit=1,
         timeout_penalty=2000,
         decay_factor=0.9,
@@ -38,13 +38,14 @@ def launch():
         timetable=timetable,
     )
     
-    # Fixed RM
-    lambda_rm.fixed_rm(
-        max_episode=10,
-        plot_prefix_name="FixedRM",
-        save_plot=True,
-        show_plot=False
-    )
+    # # Fixed RM
+    # lambda_rm.fixed_rm(
+    #     max_episode=10,
+    #     plot_prefix_name="FixedRM",
+    #     save_plot=True,
+    #     show_plot=False
+    # )
+    # lambda_rm.refresh_openwhisk()
 
     # # Greedy RM
     # lambda_rm.greedy_rm(
@@ -53,24 +54,26 @@ def launch():
     #     save_plot=True,
     #     show_plot=False
     # )
+    # lambda_rm.refresh_openwhisk()
 
     # # Train
     # lambda_rm.train(
-    #     max_episode=50,
+    #     max_episode=100,
     #     save_path="ckpt/best_model.pth",
     #     plot_prefix_name="LambdaRM_train",
     #     save_plot=True,
     #     show_plot=False
     # )
+    lambda_rm.refresh_openwhisk()
 
-    # # Eval
-    # lambda_rm.eval(
-    #     max_episode=10,
-    #     checkpoint_path="ckpt/best_model.pth",
-    #     plot_prefix_name="LambdaRM_eval",
-    #     save_plot=True,
-    #     show_plot=False,
-    # )
+    # Eval
+    lambda_rm.eval(
+        max_episode=10,
+        checkpoint_path="ckpt/best_model.pth",
+        plot_prefix_name="LambdaRM_eval",
+        save_plot=True,
+        show_plot=False,
+    )
 
 
 if __name__ == "__main__":

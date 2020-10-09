@@ -49,10 +49,10 @@ object DockerContainer {
   def convertToDefaultCpuShares(memory: Int): Int = max((1024 / (8192 / memory)).toInt, 2)
 
   // Convert cpu limit from Int representation to docker option --cpu-shares
-  def convertToCpuShares(cpu: Int): Int = cpu * 32
+  def convertToCpuShares(cpu: Int): Int = cpu * 128
 
   // Convert cpu limit from Int representation to docker option --cpus
-  def convertToCpus(cpu: Int): Double = cpu * 0.25
+  def convertToCpus(cpu: Int): Double = cpu * 1
 
   /**
    * Creates a container running on a docker daemon.
@@ -100,10 +100,10 @@ object DockerContainer {
     val args = Seq(
       // "--cpu-shares",
       // convertToDefaultCpuShares(memory.toMB.toInt).toString,
-      "--cpu-shares",
-      convertToCpuShares(cpuShares).toString,
-      // "--cpus", 
-      // convertToCpus(cpuShares).toString,
+      // "--cpu-shares",
+      // convertToCpuShares(cpuShares).toString,
+      "--cpus", 
+      convertToCpus(cpuShares).toString,
       "--memory",
       s"${memory.toMB}m",
       "--memory-swap",

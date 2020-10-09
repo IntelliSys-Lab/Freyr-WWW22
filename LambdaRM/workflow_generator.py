@@ -110,13 +110,13 @@ class WorkflowGenerator():
         # Hardcoded parameters of functions
         for param in function_params:
             if param.function_id == "alu":
-                param.invoke_params = "-p loopTime 500000 -p parallelIndex 100" # 64: 0.6 sec, 1: 8.3 sec
+                param.invoke_params = "-p loopTime 100000000 -p parallelIndex 100" # 64: 0.6 sec, 1: 8.3 sec
             elif param.function_id == "ms":
-                param.invoke_params = "-p listSize 100000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
+                param.invoke_params = "-p listSize 300000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
             elif param.function_id == "gd":
-                param.invoke_params = "-p x_row 20 -p x_col 20 -p w_row 50 -p loopTime 1" # 64: 2.2 sec, 1: 8.7 sec
+                param.invoke_params = "-p x_row 50 -p x_col 50 -p w_row 50 -p loopTime 1" # 64: 2.2 sec, 1: 8.7 sec
             elif param.function_id == "knn":
-                param.invoke_params = "-p datasetSize 1000 -p featureDim 100 -p k 3 -p loopTime 1" # 64: 1.7 sec, 1: 7.2 sec
+                param.invoke_params = "-p datasetSize 10000 -p featureDim 1000 -p k 3 -p loopTime 1" # 64: 1.7 sec, 1: 7.2 sec
             elif param.function_id == "imageProcessSequence":
                 param.invoke_params = "-p imageName test.jpg" # 64: 11.5 sec, 1: 26.6 sec
             elif param.function_id == "alexa-frontend":

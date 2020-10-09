@@ -216,14 +216,12 @@ class LambdaRM():
                 if is_done is True:
                     done_time = self.system_time.get_system_runtime()
                     is_timeout = result_dict[function_id][request_id]["is_timeout"] 
+                    duration = result_dict[function_id][request_id]["duration"]
+                    is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
+
+                    total_completion_time = total_completion_time + duration
                     # Check if timeout
-                    if is_timeout is False:
-                        duration = result_dict[function_id][request_id]["duration"]
-                        is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
-                        total_completion_time = total_completion_time + duration
-                    else:
-                        duration = None
-                        is_cold_start = None
+                    if is_timeout is True:
                         total_timeout = total_timeout + 1
 
                     # Set updates for done requests
@@ -239,17 +237,17 @@ class LambdaRM():
         # Update request cord of each function
         for function in self.profile.get_function_profile():
             function.get_request_record().update_request(done_request_dict[function.get_function_id()])
-            # if function.get_function_id() == "imageProcessSequence":
-            #     for request in function.get_request_record().get_total_request_record():
-            #         print("{}: {}".format(request.get_request_id(), request.get_completion_time()))
 
         return total_timeout, total_completion_time
 
+    def refresh_openwhisk(self):
+        restart_cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
+        run_cmd(restart_cmd)
+        time.sleep(30)
+
     def cool_down_openwhisk(self):
-        if self.cool_down == "restart":
-            restart_cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
-            run_cmd(restart_cmd)
-            time.sleep(30)
+        if self.cool_down == "refresh":
+            self.refresh_openwhisk()
         else:
             time.sleep(self.cool_down)
                                         
@@ -316,6 +314,14 @@ class LambdaRM():
             cpu_util = float(self.redis_client.hget(invoker, "cpu_util"))
             memory_util = float(self.redis_client.hget(invoker, "memory_util"))
             self.resource_utils_record.put_resource_utils(invoker, cpu_util, memory_util)
+
+    def get_function_throughput(self):
+        throughput = 0
+        for function in self.profile.get_function_profile():
+            request_record = function.get_request_record()
+            throughput = throughput + request_record.get_success_request_size() + request_record.get_timeout_size()
+
+        return throughput
 
     def get_observation(self):
         # Controller state
@@ -427,7 +433,8 @@ class LambdaRM():
             "timeout_num": self.get_total_timeout_num(),
             "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime(),
-            "resource_utils_record": self.get_resource_utils_record()
+            "resource_utils_record": self.get_resource_utils_record(),
+            "function_throughput": self.get_function_throughput()
         }
 
         return info
@@ -460,6 +467,9 @@ class LambdaRM():
             # after_invoke = time.time()
             # print("Invoke overhead: {}".format(after_invoke - before_invoke))
 
+            # Get resource utils
+            self.get_resource_utils()
+
             # Try to update undone requests
             # before_try = time.time()
             total_timeout, total_completion_time = self.try_update_request_record()
@@ -475,9 +485,6 @@ class LambdaRM():
                 total_completion_time=total_completion_time
             )
 
-            # Get resource utils
-            self.get_resource_utils()
-            
             # Reset resource adjust direction for each function 
             for function in self.profile.function_profile:
                 function.reset_resource_adjust_direction()
@@ -526,7 +533,10 @@ class LambdaRM():
 
             actual_time = 0
             system_time = 0
+            system_runtime = 0
             reward_sum = 0
+
+            function_throughput_list = []
 
             # Set up logger
             logger = self.logger_wrapper.get_logger(rm, True)
@@ -539,6 +549,7 @@ class LambdaRM():
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
                     system_runtime = info["system_runtime"]
+                    function_throughput_list.append(info["function_throughput"])
                     
                 logger.debug("")
                 logger.debug("System runtime: {}".format(system_runtime))
@@ -570,12 +581,18 @@ class LambdaRM():
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+
+                    # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
 
+                    # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
                     self.log_resource_utils(False, rm, episode, resource_utils_record)
+
+                    # Log function throughput
+                    self.log_function_throughput(False, rm, episode, function_throughput_list)
                     
                     break
                 
@@ -657,9 +674,13 @@ class LambdaRM():
         # Start training
         for episode in range(max_episode):
             observation = self.reset()
+
             reward_sum = 0
             actual_time = 0
             system_time = 0
+            system_runtime = 0
+
+            function_throughput_list = []
             
             action = self.action_space - 1
             
@@ -672,7 +693,9 @@ class LambdaRM():
                 
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
+                    system_runtime = info["system_runtime"]
                     record = info["request_record_dict"]
+                    function_throughput_list.append(info["function_throughput"])
                     
                     #
                     # Greedy resource adjustment: Completion time decay
@@ -740,7 +763,7 @@ class LambdaRM():
 
                 logger.debug("")
                 logger.debug("Actual timestep {}".format(actual_time))
-                logger.debug("System timestep {}".format(system_time))
+                logger.debug("System timestep {}".format(system_runtime))
                 logger.debug("Take action: {}".format(action))
                 logger.debug("Observation: {}".format(observation))
                 logger.debug("Reward: {}".format(reward))
@@ -758,7 +781,7 @@ class LambdaRM():
                     logger.info("")
                     logger.info("Episode {} finished after:".format(episode))
                     logger.info("{} actual timesteps".format(actual_time))
-                    logger.info("{} system timesteps".format(system_time))
+                    logger.info("{} system timesteps".format(system_runtime))
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
@@ -766,12 +789,18 @@ class LambdaRM():
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+
+                    # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
 
+                    # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
                     self.log_resource_utils(False, rm, episode, resource_utils_record)
+
+                    # Log function throughput
+                    self.log_function_throughput(False, rm, episode, function_throughput_list)
                     
                     break
             
@@ -851,7 +880,10 @@ class LambdaRM():
 
             actual_time = 0
             system_time = 0
+            system_runtime = 0
             reward_sum = 0
+
+            function_throughput_list = []
 
             # Set up logger
             logger = self.logger_wrapper.get_logger(rm, True)
@@ -871,10 +903,12 @@ class LambdaRM():
                 
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
+                    system_runtime = info["system_runtime"]
+                    function_throughput_list.append(info["function_throughput"])
                     
                 logger.debug("")
                 logger.debug("Actual timestep {}".format(actual_time))
-                logger.debug("System timestep {}".format(system_time))
+                logger.debug("System timestep {}".format(system_runtime))
                 logger.debug("Take action: {}".format(action))
                 logger.debug("Observation: {}".format(observation))
                 logger.debug("Reward: {}".format(reward))
@@ -902,7 +936,7 @@ class LambdaRM():
                     logger.info("")
                     logger.info("Episode {} finished after:".format(episode))
                     logger.info("{} actual timesteps".format(actual_time))
-                    logger.info("{} system timesteps".format(system_time))
+                    logger.info("{} system timesteps".format(system_runtime))
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
@@ -912,12 +946,18 @@ class LambdaRM():
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
                     loss_trend.append(loss)
-                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
-                    for function_id in avg_completion_time_per_function.keys():
-                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    
+                    # # Log average completion time per function
+                    # avg_completion_time_per_function = info["avg_completion_time_per_function"]
+                    # for function_id in avg_completion_time_per_function.keys():
+                    #     avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
 
+                    # # Log resource utilization 
                     # resource_utils_record = info["resource_utils_record"]
                     # self.log_resource_utils(False, rm, episode, resource_utils_record)
+
+                    # # Log function throughput
+                    # self.log_function_throughput(False, rm, episode, function_throughput_list)
                     
                     break
                 
@@ -995,7 +1035,10 @@ class LambdaRM():
 
             actual_time = 0
             system_time = 0
+            system_runtime = 0
             reward_sum = 0
+
+            function_throughput_list = []
             
             # Set up logger
             logger = self.logger_wrapper.get_logger(rm, True)
@@ -1007,10 +1050,12 @@ class LambdaRM():
 
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
+                    system_runtime = info["system_runtime"]
+                    function_throughput_list.append(info["function_throughput"])
                     
                 logger.debug("")
                 logger.debug("Actual timestep {}".format(actual_time))
-                logger.debug("System timestep {}".format(system_time))
+                logger.debug("System timestep {}".format(system_runtime))
                 logger.debug("Take action: {}".format(action))
                 logger.debug("Observation: {}".format(observation))
                 logger.debug("Reward: {}".format(reward))
@@ -1028,7 +1073,7 @@ class LambdaRM():
                     logger.info("")
                     logger.info("Episode {} finished after:".format(episode))
                     logger.info("{} actual timesteps".format(actual_time))
-                    logger.info("{} system timesteps".format(system_time))
+                    logger.info("{} system timesteps".format(system_runtime))
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
@@ -1036,13 +1081,19 @@ class LambdaRM():
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+
+                    # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
                     for function_id in avg_completion_time_per_function.keys():
                         avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
 
+                    # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
                     self.log_resource_utils(False, rm, episode, resource_utils_record)
-                    
+
+                    # Log function throughput
+                    self.log_function_throughput(False, rm, episode, function_throughput_list)
+
                     break
                 
                 observation = next_observation
@@ -1159,6 +1210,8 @@ class LambdaRM():
         logger = self.logger_wrapper.get_logger("ResourceUtils", overwrite)
         logger.debug("")
         logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
         logger.debug("")
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{} episode {}:".format(rm_name, episode))
@@ -1186,4 +1239,22 @@ class LambdaRM():
         logger.debug(record["avg_invoker"]["avg_cpu_util"])
         logger.debug("avg_memory_util")
         logger.debug(record["avg_invoker"]["avg_memory_util"])
+
+    def log_function_throughput(
+        self,
+        overwrite,
+        rm_name,
+        episode,
+        function_throughput_list
+    ):
+        logger = self.logger_wrapper.get_logger("FunctionThroughput", overwrite)
+        logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+        logger.debug("{} episode {}:".format(rm_name, episode))
+        logger.debug("function_throughput")
+        logger.debug(','.join(str(function_throughput) for function_throughput in function_throughput_list))
 

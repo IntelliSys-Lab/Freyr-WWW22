@@ -44,7 +44,7 @@ protected[entity] class MemoryLimit private (val megabytes: Int) extends AnyVal
 
 protected[core] object MemoryLimit extends ArgNormalizer[MemoryLimit] {
   // Default setting of cpu-shares
-  val USER_CPU: Int = 32
+  val USER_CPU: Int = 8
   // val USER_CPU: Int = 10000 // Default no cpu limit
   val MIN_CPU: Int = 1
   val MAX_CPU: Int = 8

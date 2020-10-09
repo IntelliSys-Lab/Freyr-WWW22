@@ -208,9 +208,11 @@ class Request():
                 result_dict[self.function_id][self.request_id]["is_cold_start"] = False
         else:
             # Manually rule out timeout requests
-            if system_runtime - self.invoke_time > 70:
+            if system_runtime - self.invoke_time > 62:
                 result_dict[self.function_id][self.request_id]["is_done"] = True
+                result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
                 result_dict[self.function_id][self.request_id]["is_timeout"] = True
+                result_dict[self.function_id][self.request_id]["is_cold_start"] = True
             else:
                 result_dict[self.function_id][self.request_id]["is_done"] = False
 
@@ -226,9 +228,9 @@ class Request():
         self.done_time = done_time
         self.is_timeout = is_timeout
         
-        if is_timeout is False and completion_time is not None:
+        if completion_time is not None:
             self.completion_time = completion_time
-        if is_timeout is False and is_cold_start is not None:
+        if is_cold_start is not None:
             self.is_cold_start = is_cold_start
 
     def get_function_id(self):
@@ -295,6 +297,10 @@ class RequestRecord():
         undone_size = len(self.undone_request_record)
         return undone_size
 
+    def get_success_request_size(self):
+        success_size = len(self.success_request_record)
+        return success_size
+
     # Deprecated
     def get_current_timeout_size(self, system_runtime):
         current_timeout_size = 0
@@ -315,6 +321,10 @@ class RequestRecord():
         for request in self.success_request_record:
             request_num = request_num + 1
             total_completion_time = total_completion_time + request.get_completion_time()
+
+        for request in self.timeout_request_record:
+            request_num = request_num + 1
+            total_completion_time = total_completion_time + request.get_completion_time()
         
         if request_num == 0:
             avg_completion_time = 0
@@ -329,10 +339,10 @@ class RequestRecord():
         else:
             is_cold_start = self.total_request_record[-1].get_is_cold_start()
 
-        if is_cold_start is True:
-            return 1
-        else:
+        if is_cold_start is False:
             return 0
+        else:
+            return 1
 
     def get_total_request_record(self):
         return self.total_request_record
