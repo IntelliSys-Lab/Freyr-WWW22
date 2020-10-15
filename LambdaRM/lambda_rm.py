@@ -8,7 +8,8 @@ import queue
 from logger import Logger
 from plotter import Plotter
 from ppo2_agent import PPO2Agent
-from utils import SystemTime, Request, run_cmd, ResourceUtilsRecord
+from utils import SystemTime, Request, ResourceUtilsRecord
+from run_command import run_cmd
 
 
 

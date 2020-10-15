@@ -1,27 +1,13 @@
 import time
-import subprocess
 import multiprocessing
 import couchdb
 import numpy as np
 import copy as cp
 import json
+
 from params import WSK_CLI
+from run_command import run_cmd
 
-
-#
-# Function utilities
-# 
-
-def run_cmd(cmd):
-    pong = subprocess.Popen(
-        cmd,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    result = pong.stdout.read().decode().replace('\n', '')
-
-    return result
 
 #
 # Class utilities

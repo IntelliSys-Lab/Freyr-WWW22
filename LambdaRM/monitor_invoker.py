@@ -4,7 +4,7 @@ import redis
 import psutil
 import docker
 
-from utils import run_cmd
+from run_command import run_cmd
 
 
 # Connect to Redis pool
