@@ -32,8 +32,11 @@ while True:
     current_cpu_shares = 0
     for container in docker_client.api.containers(filters={"name": "guest"}):
         id = container["Id"]
-        cpu_share = docker_client.api.inspect_container(id)["HostConfig"]["CpuShares"]
-        current_cpu_shares = current_cpu_shares + cpu_share
+        try:
+            cpu_share = docker_client.api.inspect_container(id)["HostConfig"]["CpuShares"]
+            current_cpu_shares = current_cpu_shares + cpu_share
+        except docker.errors.NotFound:
+            pass
 
     invoker_dict["current_cpu_shares"] = current_cpu_shares
 
