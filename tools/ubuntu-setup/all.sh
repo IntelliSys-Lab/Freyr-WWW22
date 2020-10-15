@@ -46,6 +46,15 @@ echo "*** installing ansible"
 echo "*** installing npm"
 /bin/bash "$SCRIPTDIR/npm.sh"
 
+echo "*** installing python3 dependencies"
+/bin/bash "$SCRIPTDIR/pip3.sh"
+
+echo "*** installing ssh dependencies"
+/bin/bash "$SCRIPTDIR/ssh.sh"
+
+echo "*** installing redis tools"
+/bin/bash "$SCRIPTDIR/redis.sh"
+
 # WARNING:
 #
 # This step MUST be last when testing scripts for validity using

@@ -3,6 +3,7 @@ import redis
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
+import queue
 
 from logger import Logger
 from plotter import Plotter
@@ -30,14 +31,12 @@ class LambdaRM():
         couch_port = "5984",
         cool_down=60,
         interval_limit=None,
-        timeout_penalty=60,
+        fail_penalty=60,
         decay_factor=0.8,
-        reward_type="actual_completion_time"
     ):
         self.cool_down = cool_down
-        self.timeout_penalty = timeout_penalty
+        self.fail_penalty = fail_penalty
         self.decay_factor = decay_factor
-        self.reward_type = reward_type
         self.profile = profile
         self.timetable = timetable
 
@@ -105,6 +104,7 @@ class LambdaRM():
                 #     self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
 
                 self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
+
                 # Set the sequence of this function as well
                 if self.profile.function_profile[function_index].get_sequence() is not None:
                     sequence = self.profile.function_profile[function_index].get_sequence()
@@ -147,15 +147,14 @@ class LambdaRM():
         if timestep is not None:
             manager = multiprocessing.Manager()
             result_dict = manager.dict()
-            for function in self.profile.function_profile:
-                result_dict[function.function_id] = manager.list()
-
             jobs = []
 
             for function_i in range(self.profile.get_size()):
+                function = self.profile.function_profile[function_i]
+                result_dict[function.function_id] = manager.list()
                 for _ in range(timestep[function_i]):
                     p = multiprocessing.Process(
-                        target=self.profile.function_profile[function_i].invoke_openwhisk,
+                        target=function.invoke_openwhisk,
                         args=(result_dict,)
                     )
                     jobs.append(p)
@@ -201,6 +200,7 @@ class LambdaRM():
         # Update requests according to the result dict
         # Return the timeout requests and rewards for done requests at this timestep
         total_timeout = 0
+        total_error = 0
         total_completion_time = 0
         done_request_dict = {}
 
@@ -216,19 +216,26 @@ class LambdaRM():
                 if is_done is True:
                     done_time = self.system_time.get_system_runtime()
                     is_timeout = result_dict[function_id][request_id]["is_timeout"] 
+                    is_success = result_dict[function_id][request_id]["is_success"] 
                     duration = result_dict[function_id][request_id]["duration"]
                     is_cold_start = result_dict[function_id][request_id]["is_cold_start"]
 
                     total_completion_time = total_completion_time + duration
+
                     # Check if timeout
                     if is_timeout is True:
                         total_timeout = total_timeout + 1
+
+                    # Check if error
+                    if is_success is False:
+                        total_error = total_error + 1
 
                     # Set updates for done requests
                     request.set_updates(
                         is_done=is_done,
                         done_time=done_time,
                         is_timeout=is_timeout,
+                        is_success=is_success,
                         completion_time=duration,
                         is_cold_start=is_cold_start
                     )
@@ -238,11 +245,44 @@ class LambdaRM():
         for function in self.profile.get_function_profile():
             function.get_request_record().update_request(done_request_dict[function.get_function_id()])
 
-        return total_timeout, total_completion_time
+        return total_timeout, total_error, total_completion_time
+
+    # Multiprocessing
+    def query_resource_utils(self, invoker, result_dict):
+        cpu_util = float(self.redis_client.hget(invoker, "cpu_util"))
+        memory_util = float(self.redis_client.hget(invoker, "memory_util"))
+
+        result_dict[invoker]["cpu_util"] = cpu_util
+        result_dict[invoker]["memory_util"] = memory_util
+
+    # Multiprocessing
+    def update_resource_utils(self):
+        manager = multiprocessing.Manager()
+        result_dict = manager.dict()
+        jobs = []
+
+        for i in range(self.n_invoker):
+            invoker = "invoker{}".format(i)
+            result_dict[invoker] = manager.dict()
+
+            p = multiprocessing.Process(
+                target=self.query_resource_utils,
+                args=(invoker, result_dict)
+            )
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+        
+        for invoker in result_dict.keys():
+            cpu_util = result_dict[invoker]["cpu_util"]
+            memory_util = result_dict[invoker]["memory_util"]
+            self.resource_utils_record.put_resource_utils(invoker, cpu_util, memory_util)
 
     def refresh_openwhisk(self):
-        restart_cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
-        run_cmd(restart_cmd)
+        cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
+        run_cmd(cmd)
         time.sleep(30)
 
     def cool_down_openwhisk(self):
@@ -259,19 +299,26 @@ class LambdaRM():
         return n_undone_request
 
     # Deprecated
-    def get_current_timeout_num(self):
-        n_timeout = 0
-        for function in self.profile.function_profile:
-            n_timeout = n_timeout + function.get_request_record().get_current_timeout_size(self.system_time.get_system_runtime())
+    # def get_current_timeout_num(self):
+    #     n_timeout = 0
+    #     for function in self.profile.function_profile:
+    #         n_timeout = n_timeout + function.get_request_record().get_current_timeout_size(self.system_time.get_system_runtime())
 
-        return n_timeout
+    #     return n_timeout
 
     def get_total_timeout_num(self):
         n_timeout = 0
-        for function in self.profile.function_profile:
+        for function in self.profile.get_function_profile():
             n_timeout = n_timeout + function.get_request_record().get_timeout_size()
 
         return n_timeout
+
+    def get_total_error_num(self):
+        n_error = 0
+        for function in self.profile.get_function_profile():
+            n_error = n_error + function.get_request_record().get_error_size()
+
+        return n_error
 
     def get_avg_completion_time(self):
         request_num = 0
@@ -300,7 +347,15 @@ class LambdaRM():
     def get_request_record_dict(self):
         request_record_dict = {}
         for function in self.profile.function_profile:
-            request_record_dict[function.function_id] = function.get_request_record().get_total_request_record()
+            request_record_dict[function.function_id] = {}
+            avg_completion_time, _, _ = function.get_request_record().get_avg_completion_time()
+            avg_interval = function.get_avg_interval(self.system_time.get_system_runtime())
+            cpu = function.get_cpu()
+            memory = function.get_memory()
+            request_record_dict[function.function_id]["avg_completion_time"] = avg_completion_time
+            request_record_dict[function.function_id]["avg_interval"] = avg_interval
+            request_record_dict[function.function_id]["cpu"] = cpu
+            request_record_dict[function.function_id]["memory"] = memory
 
         return request_record_dict
 
@@ -308,21 +363,25 @@ class LambdaRM():
         self.resource_utils_record.calculate_avg_resource_utils()
         return self.resource_utils_record.get_record()
 
-    def get_resource_utils(self):
-        for i in range(self.n_invoker):
-            invoker = "invoker{}".format(i)
-            cpu_util = float(self.redis_client.hget(invoker, "cpu_util"))
-            memory_util = float(self.redis_client.hget(invoker, "memory_util"))
-            self.resource_utils_record.put_resource_utils(invoker, cpu_util, memory_util)
-
     def get_function_throughput(self):
         throughput = 0
         for function in self.profile.get_function_profile():
             request_record = function.get_request_record()
-            throughput = throughput + request_record.get_success_request_size() + request_record.get_timeout_size()
+            throughput = throughput + request_record.get_success_size() + request_record.get_timeout_size() + request_record.get_error_size()
 
         return throughput
 
+    # Multiprocessing
+    def query_invoker_state(self, invoker, result_dict):
+        available_cpu = int(self.redis_client.hget(invoker, "available_cpu"))
+        available_memory = int(self.redis_client.hget(invoker, "available_memory"))
+        current_cpu_shares = int(self.redis_client.hget(invoker, "current_cpu_shares"))
+
+        result_dict[invoker]["available_cpu"] = available_cpu
+        result_dict[invoker]["available_memory"] = available_memory
+        result_dict[invoker]["current_cpu_shares"] = current_cpu_shares
+
+    # Multiprocessing
     def get_observation(self):
         # Controller state
         controller_state = []
@@ -331,15 +390,38 @@ class LambdaRM():
 
         # Invoker state
         invoker_state = []
+        total_available_cpu = 0
+        total_available_memory = 0
+
+        manager = multiprocessing.Manager()
+        result_dict = manager.dict()
+        jobs = []
+
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i) 
+            result_dict[invoker] = manager.dict()
 
-            available_cpu = int(self.redis_client.hget(invoker, "available_cpu"))
+            p = multiprocessing.Process(
+                target=self.query_invoker_state,
+                args=(invoker, result_dict)
+            )
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        for invoker in result_dict.keys():
+            available_cpu = result_dict[invoker]["available_cpu"]
+            available_memory = result_dict[invoker]["available_memory"]
+            current_cpu_shares = result_dict[invoker]["current_cpu_shares"]
+
             invoker_state.append(available_cpu)
-            available_memory = int(self.redis_client.hget(invoker, "available_memory"))
             invoker_state.append(available_memory)
-            n_container = int(self.redis_client.hget(invoker, "n_container"))
-            invoker_state.append(n_container)
+            invoker_state.append(current_cpu_shares)
+            
+            total_available_cpu = total_available_cpu + available_cpu
+            total_available_memory = total_available_memory + available_memory
 
         # Function state
         function_state = []
@@ -355,13 +437,13 @@ class LambdaRM():
         # [n_undone_request,
         #  invoker_1_available_cpu, 
         #  invoker_1_available_memory,
-        #  invoker_1_n_container,
+        #  invoker_1_current_cpu_shares,
         #  .
         #  .
         #  .
         #  invoker_n_available_cpu, 
         #  invoker_n_available_memory,
-        #  invoker_n_n_container,
+        #  invoker_n_current_cpu_shares,
         #  function_1_cpu,
         #  function_1_memory,
         #  function_1_avg_interval,
@@ -376,66 +458,72 @@ class LambdaRM():
         #  function_m_avg_completion_time,
         #  function_m_is_cold_start]
         observation = np.hstack(
-            (np.array(controller_state),
-            np.array(invoker_state),
-            np.array(function_state))
+            (
+                np.array(controller_state),
+                np.array(invoker_state),
+                np.array(function_state)
+            )
         )
 
-        return observation
+        return observation, total_available_cpu, total_available_memory
 
     def get_reward(
         self, 
         total_timeout, 
-        interval=None, 
-        total_completion_time=None
+        total_error,
+        interval, 
+        total_completion_time
     ):
         # Penalty for timeout requests
-        timeout_reward = - self.timeout_penalty * total_timeout
+        timeout_reward = - self.fail_penalty * total_timeout
+
+        # Penalty for error requests
+        error_reward = - self.fail_penalty * total_error
+
+        # Penalty for success requests
+        success_reward = - total_completion_time
         
-        # Penalty for undone requests
-        n_undone_request = 0
-        undone_reward = 0
-        
-        if self.reward_type == "interval" and interval is not None:
-            for function in self.profile.function_profile:
-                n_undone_request = n_undone_request + function.get_request_record().get_undone_size()
-                undone_reward = undone_reward + (- interval)
-
-        elif self.reward_type == "interval_decay" and interval is not None:
-            for function in self.profile.function_profile:
-                for request in function.get_request_record().get_undone_request_record():
-                    n_undone_request = n_undone_request + 1
-                    undone_reward = undone_reward + (- interval * np.power(self.decay_factor, self.system_time.get_system_runtime() - request.get_invoke_time()))
-
-        elif self.reward_type == "actual_completion_time" and total_completion_time is not None:
-            undone_reward = -total_completion_time
-
         # Total reward
-        reward = timeout_reward + undone_reward
+        reward = timeout_reward + error_reward + success_reward
 
         return reward
 
-    def get_done(self, observation):
+    def get_done(self, observation=None):
         done = False
 
-        # n_undone_request = observation[0]
-        n_undone_request = self.get_n_undone_request_from_profile()
+        if observation is not None:
+            n_undone_request = observation[0]
+        else:
+            n_undone_request = self.get_n_undone_request_from_profile()
         if self.system_time.get_system_step() >= self.timetable.get_size() and n_undone_request == 0:
             done = True
             
         return done
 
-    def get_info(self):
+    def get_info(
+        self,
+        total_available_cpu=None,
+        total_available_memory=None
+    ):
         info = {
             "system_step": self.system_time.get_system_step(),
             "avg_completion_time": self.get_avg_completion_time(),
             "avg_completion_time_per_function": self.get_avg_completion_time_per_function(),
             "timeout_num": self.get_total_timeout_num(),
+            "error_num": self.get_total_error_num(),
             "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime(),
-            "resource_utils_record": self.get_resource_utils_record(),
             "function_throughput": self.get_function_throughput()
         }
+
+        if total_available_cpu is not None:
+            info["total_available_cpu"] = total_available_cpu
+
+        if total_available_memory is not None:
+            info["total_available_memory"] = total_available_memory
+
+        if self.get_done() is True:
+            info["resource_utils_record"] = self.get_resource_utils_record()
 
         return info
 
@@ -444,7 +532,7 @@ class LambdaRM():
         
         if is_valid_action is True: # THE WORLD!
             # Get observation for next state
-            observation = self.get_observation() 
+            observation, total_available_cpu, total_available_memory = self.get_observation() 
             reward = 0
         else: # Time starts proceeding
             interval = self.system_time.step()
@@ -456,7 +544,7 @@ class LambdaRM():
             # )
             
             # Update functions on OpenWhisk
-            # before_update = time.time()cd 
+            # before_update = time.time()
             self.update_openwhisk()
             # after_update = time.time()
             # print("Update overhead: {}".format(after_update - before_update))
@@ -467,20 +555,24 @@ class LambdaRM():
             # after_invoke = time.time()
             # print("Invoke overhead: {}".format(after_invoke - before_invoke))
 
-            # Get resource utils
-            self.get_resource_utils()
+            # Update resource utils
+            # before_utils = time.time()
+            self.update_resource_utils()
+            # after_utils = time.time()
+            # print("Utils overhead: {}".format(after_utils - before_utils))
 
             # Try to update undone requests
             # before_try = time.time()
-            total_timeout, total_completion_time = self.try_update_request_record()
+            total_timeout, total_error, total_completion_time = self.try_update_request_record()
             # after_try = time.time()
             # print("Try overhead: {}".format(after_try - before_try))
             # print("")
 
             # Get observation for next state
-            observation = self.get_observation() 
+            observation, total_available_cpu, total_available_memory = self.get_observation() 
             reward = self.get_reward(
                 total_timeout=total_timeout,
+                total_error=total_error,
                 interval=interval,
                 total_completion_time=total_completion_time
             )
@@ -490,10 +582,13 @@ class LambdaRM():
                 function.reset_resource_adjust_direction()
 
         # Done?
-        done = self.get_done(observation)
+        done = self.get_done()
         
         # Return information
-        info = self.get_info()
+        info = self.get_info(
+            total_available_cpu=total_available_cpu,
+            total_available_memory=total_available_memory
+        )
         
         return observation, reward, done, info
 
@@ -502,7 +597,7 @@ class LambdaRM():
         self.profile.reset()
         self.resource_utils_record.reset()
         
-        observation = self.get_observation()
+        observation, total_available_cpu, total_available_memory = self.get_observation()
         
         return observation
 
@@ -517,12 +612,13 @@ class LambdaRM():
         save_plot=False,
         show_plot=True,
     ):
-        rm = "FixedRM"
+        rm = plot_prefix_name
         
         # Trends recording
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
             avg_completion_time_per_function_trend[function.get_function_id()] = []
@@ -564,6 +660,7 @@ class LambdaRM():
                 if done:
                     avg_completion_time = info["avg_completion_time"]
                     timeout_num = info["timeout_num"]
+                    error_num = info["error_num"]
                     
                     logger.info("")
                     logger.info("**********")
@@ -577,10 +674,12 @@ class LambdaRM():
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
+                    logger.info("Error num: {}".format(error_num))
                     
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    error_num_trend.append(error_num)
 
                     # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
@@ -610,12 +709,14 @@ class LambdaRM():
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend,
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
             )
         if show_plot is True:
             plotter.plot_show(
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend, 
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
             )
 
         # Log trends
@@ -626,6 +727,7 @@ class LambdaRM():
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
+            error_num_trend=error_num_trend,
             loss_trend=None,
         )
 
@@ -661,12 +763,13 @@ class LambdaRM():
                             
             return actions
 
-        rm = "GreedyRM"
+        rm = plot_prefix_name
         
         # Record trends
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
             avg_completion_time_per_function_trend[function.get_function_id()] = []
@@ -687,6 +790,14 @@ class LambdaRM():
             # Set up logger
             logger = self.logger_wrapper.get_logger(rm, True)
 
+            # Set up completion time record
+            completion_time_decay_record = {}
+            for function in self.profile.function_profile:
+                completion_time_decay_record[function.function_id] = {}
+                completion_time_decay_record[function.function_id]["old_completion_time"] = 0
+                completion_time_decay_record[function.function_id]["new_completion_time"] = 0
+                completion_time_decay_record[function.function_id]["decay"] = 1.0
+
             while True:
                 actual_time = actual_time + 1
                 observation, reward, done, info = self.step(action)
@@ -694,18 +805,18 @@ class LambdaRM():
                 if system_time < info["system_step"]:
                     system_time = info["system_step"]
                     system_runtime = info["system_runtime"]
-                    record = info["request_record_dict"]
                     function_throughput_list.append(info["function_throughput"])
+
+                    record = info["request_record_dict"]
+                    # total_available_cpu = 8*10
+                    # total_available_memory = 8*10
+                    total_available_cpu = info["total_available_cpu"]
+                    total_available_memory = info["total_available_memory"] / 256
                     
                     #
                     # Greedy resource adjustment: Completion time decay
                     #
 
-                    # Record last two completion time for each function and its decay at each system timestep
-                    completion_time_decay_record = {}
-                    for function in self.profile.function_profile:
-                        completion_time_decay_record[function.function_id] = 1.0
-                        
                     # Adjustment for each function
                     resource_adjust_list = {}
                     for function in self.profile.function_profile:
@@ -713,51 +824,43 @@ class LambdaRM():
                     
                     # Update completion time decay for each function
                     for id in record.keys():
-                        n_done_request = 0
-                        for request in record[id]:
-                            if request.get_is_done() is True:
-                                n_done_request = n_done_request + 1
+                        old_completion_time = completion_time_decay_record[id]["new_completion_time"]
+                        new_completion_time = record[id]["avg_completion_time"]
 
-                        if n_done_request <= 1: # No request finished or no old request for this function
-                            resource_adjust_list[id] = [-1, -1] # Hold 
-                        else:
-                            # Get two latest requests
-                            old_request = None
-                            new_request = None
-                            old_done_time = 0
-                            new_done_time = 0
+                        completion_time_decay_record[id]["old_completion_time"] = old_completion_time
+                        completion_time_decay_record[id]["new_completion_time"] = new_completion_time
 
-                            for request in record[id]:
-                                if request.get_is_done() is True:
-                                    if request.get_done_time() > new_done_time:
-                                        old_done_time = new_done_time
-                                        old_request = new_request
-                                        new_done_time = request.get_done_time()
-                                        new_request = request
-                                    elif request.get_done_time() >= old_done_time and request.get_done_time() <= new_done_time:
-                                        old_done_time = request.get_done_time()
-                                        old_request = request
+                        # Check if it's just a beginning
+                        if old_completion_time != 0 and new_completion_time != 0: 
+                            decay = new_completion_time / old_completion_time
+                            completion_time_decay_record[id]["decay"] = decay
 
-                            if new_request.get_is_timeout() is True or old_request.get_is_timeout() is True: 
-                                completion_time_decay_record[id] = 114514.0 # Timeout penalty
-                            else: 
-                                # Update decay
-                                completion_time_decay_record[id] = new_request.get_completion_time() / old_request.get_completion_time()
+                        cpu = record[id]["cpu"]
+                        memory = record[id]["memory"]
+                        total_available_cpu = total_available_cpu - cpu
+                        total_available_memory = total_available_memory - memory
 
-                    # Assign resource adjusts. 
-                    # Functions that have decay (latest completion time) / (previous completion time)
-                    # over avg get increase, otherwise decrease
-                    decay_list = []
+                    # Increase resources in a greedy way. 
+                    pq = queue.PriorityQueue()
                     for id in completion_time_decay_record.keys():
-                        decay_list.append(completion_time_decay_record[id])
-
-                    decay_avg = np.mean(decay_list)
-
-                    for id in completion_time_decay_record.keys():
-                        if completion_time_decay_record[id] >= decay_avg:
-                            resource_adjust_list[id] = [1, 3] # Increase one slot for CPU and memory
+                        decay = completion_time_decay_record[id]["decay"]
+                        if decay <= 1.0:
+                            resource_adjust_list[id] = [-1, -1] # Hold
                         else:
-                            resource_adjust_list[id] = [0, 2] # Decrease one slot for CPU and memory
+                            pq.put((-decay, id))
+
+                    while pq.empty() is False:
+                        id = pq.get()[1]
+                        avg_interval = record[id]["avg_interval"]
+                        
+                        if avg_interval*1 <= total_available_cpu and avg_interval*1 <= total_available_memory:
+                            # Increase one slot for CPU and memory
+                            resource_adjust_list[id] = [1, 3] 
+                            total_available_cpu = total_available_cpu - avg_interval*1
+                            total_available_memory = total_available_memory - avg_interval*1
+                        else:
+                            # Hold
+                            resource_adjust_list[id] = [-1, -1] 
                     
                     action = encode_action(self.profile.function_profile, resource_adjust_list)
 
@@ -773,6 +876,7 @@ class LambdaRM():
                 if done:
                     avg_completion_time = info["avg_completion_time"]
                     timeout_num = info["timeout_num"]
+                    error_num = info["error_num"]
                     
                     logger.info("")
                     logger.info("**********")
@@ -785,10 +889,12 @@ class LambdaRM():
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
+                    logger.info("Error num: {}".format(error_num))
                     
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    error_num_trend.append(error_num)
 
                     # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
@@ -815,13 +921,15 @@ class LambdaRM():
                 prefix_name=plot_prefix_name, 
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend,
-                timeout_num_trend=timeout_num_trend
+                timeout_num_trend=timeout_num_trend,
+                error_num_trend=error_num_trend,
             )
         if show_plot is True:
             plotter.plot_show(
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend,
                 timeout_num_trend=timeout_num_trend,
+                error_num_trend=error_num_trend,
             )
         
         # Log trends
@@ -832,6 +940,7 @@ class LambdaRM():
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
+            error_num_trend=error_num_trend,
             loss_trend=None,
         )
 
@@ -842,12 +951,11 @@ class LambdaRM():
     def train(
         self,
         max_episode=150,
-        save_path="ckpt/best_model.pth",
         plot_prefix_name="LambdaRM_train",
         save_plot=False,
         show_plot=True,
     ):
-        rm = "LambdaRM_train"
+        rm = plot_prefix_name
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -864,6 +972,7 @@ class LambdaRM():
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        error_num_trend = []
         loss_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
@@ -871,7 +980,8 @@ class LambdaRM():
         
         # Pinpoint best avg completion time model
         min_avg_completion_time = 10e8
-        min_timeout_num = 10e8
+        min_timeout_or_error_num = 10e8
+        timeout_min_avg_completion_time = 10e8
 
         # Start training
         for episode in range(max_episode):
@@ -918,14 +1028,21 @@ class LambdaRM():
                 if done:
                     avg_completion_time = info["avg_completion_time"]
                     timeout_num = info["timeout_num"]
+                    error_num = info["error_num"]
                     
-                    if timeout_num < min_timeout_num:
-                        min_timeout_num = timeout_num
-                        pg_agent.save(save_path)
-                    elif timeout_num == min_timeout_num:
-                        if avg_completion_time < min_avg_completion_time:
-                            min_avg_completion_time = avg_completion_time
-                            pg_agent.save(save_path)
+                    # Save best model that has min timeouts
+                    if timeout_num + error_num < min_timeout_or_error_num:
+                        min_timeout_or_error_num = timeout_num + error_num
+                        pg_agent.save("ckpt/best_timeout_or_error.pth")
+                    elif timeout_num + error_num == min_timeout_or_error_num:
+                        if avg_completion_time < timeout_min_avg_completion_time:
+                            timeout_min_avg_completion_time = avg_completion_time
+                            pg_agent.save("ckpt/best_timeout_or_error.pth")
+
+                    # Save best model that has min avg completion time
+                    if avg_completion_time < min_avg_completion_time:
+                        min_avg_completion_time = avg_completion_time
+                        pg_agent.save("ckpt/best_avg_completion_time.pth")
 
                     loss = pg_agent.propagate()
                     
@@ -940,11 +1057,13 @@ class LambdaRM():
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
+                    logger.info("Error num: {}".format(error_num))
                     logger.info("Loss: {}".format(loss))
                     
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    error_num_trend.append(error_num)
                     loss_trend.append(loss)
                     
                     # # Log average completion time per function
@@ -975,6 +1094,7 @@ class LambdaRM():
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend,
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
                 loss_trend=loss_trend
             )
         if show_plot is True:
@@ -982,6 +1102,7 @@ class LambdaRM():
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend, 
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
                 loss_trend=loss_trend
             )
 
@@ -993,18 +1114,19 @@ class LambdaRM():
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
+            error_num_trend=error_num_trend,
             loss_trend=loss_trend,
         )
 
     def eval(
         self,
         max_episode=10,
-        checkpoint_path="ckpt/best_model.pth",
+        checkpoint_path="ckpt/best_avg_completion_time.pth",
         plot_prefix_name="LambdaRM_eval",
         save_plot=False,
         show_plot=True,
     ):
-        rm = "LambdaRM_eval"
+        rm = plot_prefix_name
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -1024,6 +1146,7 @@ class LambdaRM():
         reward_trend = []
         avg_completion_time_trend = []
         timeout_num_trend = []
+        error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
             avg_completion_time_per_function_trend[function.get_function_id()] = []
@@ -1065,6 +1188,7 @@ class LambdaRM():
                 if done:
                     avg_completion_time = info["avg_completion_time"]
                     timeout_num = info["timeout_num"]
+                    error_num = info["error_num"]
                     
                     logger.info("")
                     logger.info("**********")
@@ -1077,10 +1201,12 @@ class LambdaRM():
                     logger.info("Total reward: {}".format(reward_sum))
                     logger.info("Avg completion time: {}".format(avg_completion_time))
                     logger.info("Timeout num: {}".format(timeout_num))
+                    logger.info("Error num: {}".format(error_num))
                     
                     reward_trend.append(reward_sum)
                     avg_completion_time_trend.append(avg_completion_time)
                     timeout_num_trend.append(timeout_num)
+                    error_num_trend.append(error_num)
 
                     # Log average completion time per function
                     avg_completion_time_per_function = info["avg_completion_time_per_function"]
@@ -1110,6 +1236,7 @@ class LambdaRM():
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend,
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
                 loss_trend=None
             )
         if show_plot is True:
@@ -1117,6 +1244,7 @@ class LambdaRM():
                 reward_trend=reward_trend, 
                 avg_completion_time_trend=avg_completion_time_trend, 
                 timeout_num_trend=timeout_num_trend, 
+                error_num_trend=error_num_trend, 
                 loss_trend=None
             )
 
@@ -1128,6 +1256,7 @@ class LambdaRM():
             avg_completion_time_trend=avg_completion_time_trend,
             avg_completion_time_per_function_trend=avg_completion_time_per_function_trend,
             timeout_num_trend=timeout_num_trend,
+            error_num_trend=error_num_trend,
             loss_trend=None,
         )
 
@@ -1139,6 +1268,7 @@ class LambdaRM():
         avg_completion_time_trend,
         avg_completion_time_per_function_trend,
         timeout_num_trend,
+        error_num_trend,
         loss_trend=None,
     ):
         # Log reward trend
@@ -1187,6 +1317,17 @@ class LambdaRM():
         logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         logger.debug("{}:".format(rm_name))
         logger.debug(','.join(str(timeout_num) for timeout_num in timeout_num_trend))
+
+        # Log error number trend
+        logger = self.logger_wrapper.get_logger("ErrorNumTrends", overwrite)
+        logger.debug("")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("**********")
+        logger.debug("")
+        logger.debug(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+        logger.debug("{}:".format(rm_name))
+        logger.debug(','.join(str(error_num) for error_num in error_num_trend))
 
         # Log loss trend
         if loss_trend is not None:

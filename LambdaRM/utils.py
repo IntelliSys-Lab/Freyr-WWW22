@@ -144,6 +144,7 @@ class Function():
         openwhisk_input = (self.cpu - 1) * 9 + self.memory
         return openwhisk_input
 
+    # Note: update too frequently may trigger function mismatch errors
     # Multiprocessing
     def update_openwhisk(self, couch_link):
         couch_client = couchdb.Server(couch_link)
@@ -151,7 +152,7 @@ class Function():
         doc_function = couch_whisks["guest/{}".format(self.function_id)]
         doc_function["limits"]["memory"] = self.translate_to_openwhisk()
         couch_whisks.save(doc_function)
-
+        
     # Multiprocessing
     def invoke_openwhisk(self, result_dict):
         if self.params.invoke_params == None:
@@ -182,6 +183,7 @@ class Request():
 
         self.completion_time = 0
         self.is_timeout = False
+        self.is_success = False
         self.is_cold_start = False
 
     # Multiprocessing
@@ -190,43 +192,57 @@ class Request():
         couch_activations = couch_client["whisk_distributed_activations"]
         doc_request = couch_activations.get("guest/{}".format(self.request_id))
 
-        if doc_request is not None and len(doc_request["annotations"]) >= 4: # Request is done
-            # Sequence request
-            if len(doc_request["annotations"]) == 4:
-                result_dict[self.function_id][self.request_id]["is_done"] = True
-                result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
-                result_dict[self.function_id][self.request_id]["is_timeout"] = False
-            # Normal request
+        # Request done?
+        if doc_request is not None: 
+            # Either timeout or error happened
+            if len(doc_request["annotations"]) < 4:
+                # Manually rule out timeout requests
+                if system_runtime - self.invoke_time > 61:
+                    result_dict[self.function_id][self.request_id]["is_done"] = True
+                    result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
+                    result_dict[self.function_id][self.request_id]["is_timeout"] = True
+                    result_dict[self.function_id][self.request_id]["is_success"] = False
+                    result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+                # Not done yet
+                else:
+                    result_dict[self.function_id][self.request_id]["is_done"] = False
+            # Request is done
             else:
                 result_dict[self.function_id][self.request_id]["is_done"] = True
                 result_dict[self.function_id][self.request_id]["duration"] = doc_request["duration"] / 1000 # Second
-                result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
-            
-            if len(doc_request["annotations"]) == 6:
-                result_dict[self.function_id][self.request_id]["is_cold_start"] = True
-            else:
-                result_dict[self.function_id][self.request_id]["is_cold_start"] = False
+                if doc_request["response"]["statusCode"] == 0:
+                    result_dict[self.function_id][self.request_id]["is_success"] = True
+                else:
+                    result_dict[self.function_id][self.request_id]["is_success"] = False
+
+                # Sequence request
+                if len(doc_request["annotations"]) == 4:
+                    result_dict[self.function_id][self.request_id]["is_timeout"] = False
+                # Normal request
+                else:
+                    result_dict[self.function_id][self.request_id]["is_timeout"] = doc_request["annotations"][3]["value"]
+                
+                if len(doc_request["annotations"]) == 6:
+                    result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+                else:
+                    result_dict[self.function_id][self.request_id]["is_cold_start"] = False
+        # Not done yet
         else:
-            # Manually rule out timeout requests
-            if system_runtime - self.invoke_time > 62:
-                result_dict[self.function_id][self.request_id]["is_done"] = True
-                result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
-                result_dict[self.function_id][self.request_id]["is_timeout"] = True
-                result_dict[self.function_id][self.request_id]["is_cold_start"] = True
-            else:
-                result_dict[self.function_id][self.request_id]["is_done"] = False
+            result_dict[self.function_id][self.request_id]["is_done"] = False
 
     def set_updates(
         self, 
         is_done, 
         done_time, 
         is_timeout, 
+        is_success,
         completion_time=None, 
         is_cold_start=None
     ):
         self.is_done = is_done
         self.done_time = done_time
         self.is_timeout = is_timeout
+        self.is_success = is_success
         
         if completion_time is not None:
             self.completion_time = completion_time
@@ -254,6 +270,9 @@ class Request():
     def get_is_timeout(self):
         return self.is_timeout
 
+    def get_is_success(self):
+        return self.is_success
+        
     def get_is_cold_start(self):
         return self.is_cold_start
 
@@ -268,6 +287,7 @@ class RequestRecord():
         self.success_request_record = []
         self.undone_request_record = []
         self.timeout_request_record = []
+        self.error_request_record = []
 
     def put_request(self, request):
         self.total_request_record.append(request)
@@ -275,17 +295,22 @@ class RequestRecord():
         if request.get_is_done() is False:
             self.undone_request_record.append(request)
         else:
-            if request.get_is_timeout() is False:
-                self.success_request_record.append(request)
-            else:
+            if request.get_is_timeout() is True:
                 self.timeout_request_record.append(request)
+            elif request.get_is_success() is True:
+                self.error_request_record.append(request)
+            else:
+                self.success_request_record.append(request)
+                
 
     def update_request(self, done_request_list):
         for request in done_request_list:
-            if request.get_is_timeout() is False:
-                self.success_request_record.append(request)
-            else:
+            if request.get_is_timeout() is True:
                 self.timeout_request_record.append(request)
+            elif request.get_is_success() is False:
+                self.error_request_record.append(request)
+            else:
+                self.success_request_record.append(request)
             
             self.undone_request_record.remove(request)
 
@@ -297,18 +322,22 @@ class RequestRecord():
         undone_size = len(self.undone_request_record)
         return undone_size
 
-    def get_success_request_size(self):
+    def get_success_size(self):
         success_size = len(self.success_request_record)
         return success_size
 
-    # Deprecated
-    def get_current_timeout_size(self, system_runtime):
-        current_timeout_size = 0
-        for request in self.timeout_request_record:
-            if request.get_done_time() == system_runtime:
-                current_timeout_size = current_timeout_size + 1
+    def get_error_size(self):
+        error_size = len(self.error_request_record)
+        return error_size
 
-        return current_timeout_size
+    # # Deprecated: no need for timestamp when counting timeouts
+    # def get_current_timeout_size(self, system_runtime):
+    #     current_timeout_size = 0
+    #     for request in self.timeout_request_record:
+    #         if request.get_done_time() == system_runtime:
+    #             current_timeout_size = current_timeout_size + 1
+
+    #     return current_timeout_size
 
     def get_timeout_size(self):
         timeout_size = len(self.timeout_request_record)
@@ -360,6 +389,7 @@ class RequestRecord():
         self.success_request_record = []
         self.undone_request_record = []
         self.timeout_request_record = []
+        self.error_request_record = []
 
 
 class ResourceUtilsRecord():
@@ -391,23 +421,26 @@ class ResourceUtilsRecord():
         self.record[invoker]["memory_util"].append(memory_util)
 
     def calculate_avg_resource_utils(self):
-        cpu_util_tmp_list = []
-        memory_util_tmp_list = []
-
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
             self.record[invoker]["avg_cpu_util"] = np.mean(self.record[invoker]["cpu_util"])
             self.record[invoker]["avg_memory_util"] = np.mean(self.record[invoker]["memory_util"])
 
-            if i == 0:
-                cpu_util_tmp_list = []
-                memory_util_tmp_list = []
+        for timestep in range(len(self.record[invoker]["cpu_util"])):
+            cpu_util_tmp_list = []
+            memory_util_tmp_list = []
+            
+            for i in range(self.n_invoker):
+                if i == 0:
+                    cpu_util_tmp_list = []
+                    memory_util_tmp_list = []
 
-            cpu_util_tmp_list.append(self.record[invoker]["cpu_util"])
-            memory_util_tmp_list.append(self.record[invoker]["memory_util"])
+                cpu_util_tmp_list.append(self.record[invoker]["cpu_util"][timestep])
+                memory_util_tmp_list.append(self.record[invoker]["memory_util"][timestep])
 
-        self.record["avg_invoker"]["cpu_util"].append(np.mean(cpu_util_tmp_list))
-        self.record["avg_invoker"]["memory_util"].append(np.mean(memory_util_tmp_list))
+            self.record["avg_invoker"]["cpu_util"].append(np.mean(cpu_util_tmp_list))
+            self.record["avg_invoker"]["memory_util"].append(np.mean(memory_util_tmp_list))
+
         self.record["avg_invoker"]["avg_cpu_util"] = np.mean(self.record["avg_invoker"]["cpu_util"])
         self.record["avg_invoker"]["avg_memory_util"] = np.mean(self.record["avg_invoker"]["memory_util"])
     
@@ -435,7 +468,7 @@ class ResourceUtilsRecord():
     
 class Profile():
     """
-    Record settings of any functions that submitted to LambdaRM
+    Record settings of functions
     """
     
     def __init__(self, function_profile):
@@ -457,7 +490,7 @@ class Profile():
         
 class Timetable():
     """
-    Dictate which and when functions will be invoked by LambdaRM
+    Dictate which and when functions will be invoked
     """
     
     def __init__(self, timetable=[]):
@@ -503,7 +536,7 @@ class SystemTime():
         interval = current_time - (self.system_up_time + self.system_runtime)
 
         if self.interval_limit is not None:
-            # Interval must exceed limit to keep invokers healthy
+            # Interval must satisfy limit to keep invokers healthy
             if self.system_step >= 0 and interval < self.interval_limit:
                 while interval < self.interval_limit:
                     current_time = time.time()

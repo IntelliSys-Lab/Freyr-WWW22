@@ -31,46 +31,55 @@ def launch():
         # cool_down="refresh",
         cool_down=65,
         interval_limit=1,
-        timeout_penalty=2000,
+        fail_penalty=60,
         decay_factor=0.9,
-        reward_type="actual_completion_time",
         profile=profile,
         timetable=timetable,
     )
     
-    # # Fixed RM
-    # lambda_rm.fixed_rm(
-    #     max_episode=10,
-    #     plot_prefix_name="FixedRM",
-    #     save_plot=True,
-    #     show_plot=False
-    # )
-    # lambda_rm.refresh_openwhisk()
-
-    # # Greedy RM
-    # lambda_rm.greedy_rm(
-    #     max_episode=10,
-    #     plot_prefix_name="GreedyRM",
-    #     save_plot=True,
-    #     show_plot=False
-    # )
-    # lambda_rm.refresh_openwhisk()
-
-    # # Train
-    # lambda_rm.train(
-    #     max_episode=100,
-    #     save_path="ckpt/best_model.pth",
-    #     plot_prefix_name="LambdaRM_train",
-    #     save_plot=True,
-    #     show_plot=False
-    # )
+    # Fixed RM
     lambda_rm.refresh_openwhisk()
+    lambda_rm.fixed_rm(
+        max_episode=10,
+        plot_prefix_name="FixedRM",
+        save_plot=True,
+        show_plot=False
+    )
 
-    # Eval
+    # Greedy RM
+    lambda_rm.refresh_openwhisk()
+    lambda_rm.greedy_rm(
+        max_episode=10,
+        plot_prefix_name="GreedyRM",
+        save_plot=True,
+        show_plot=False
+    )
+
+    # Train
+    lambda_rm.refresh_openwhisk()
+    lambda_rm.train(
+        max_episode=100,
+        plot_prefix_name="LambdaRM_train",
+        save_plot=True,
+        show_plot=False
+    )
+    
+    # Eval best timeout/error model
+    lambda_rm.refresh_openwhisk()
     lambda_rm.eval(
         max_episode=10,
-        checkpoint_path="ckpt/best_model.pth",
-        plot_prefix_name="LambdaRM_eval",
+        checkpoint_path="ckpt/best_timeout_or_error.pth",
+        plot_prefix_name="LambdaRM_eval_best_timeout_or_error",
+        save_plot=True,
+        show_plot=False,
+    )
+
+    # Eval best avg completion time model
+    lambda_rm.refresh_openwhisk()
+    lambda_rm.eval(
+        max_episode=10,
+        checkpoint_path="ckpt/best_avg_completion_time.pth",
+        plot_prefix_name="LambdaRM_eval_best_avg_completion_time",
         save_plot=True,
         show_plot=False,
     )

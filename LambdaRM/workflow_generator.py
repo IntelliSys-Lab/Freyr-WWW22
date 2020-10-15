@@ -47,7 +47,7 @@ class WorkflowGenerator():
                     function_params_dict[function_id]["memory_cap"] = 8
                     function_params_dict[function_id]["cpu_cap"] = 8
 
-                    saturation_point = row["SaturationPoint"] / 256
+                    saturation_point = row["SaturationPoint"]
                     function_params_dict[function_id]["memory_saturation_point"] = saturation_point
                     function_params_dict[function_id]["cpu_saturation_point"] = saturation_point
                     break

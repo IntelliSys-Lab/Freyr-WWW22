@@ -204,8 +204,8 @@ class PPO2Agent():
         self.rewards = []
         self.log_probs = []
 
-    def save(self, save_path="ckpt/best_model.pth"):
+    def save(self, save_path):
         torch.save(self.model.state_dict(), save_path)
 
-    def load(self, checkpoint_path="ckpt/best_model.pth"):
+    def load(self, checkpoint_path):
         self.model.load_state_dict(torch.load(checkpoint_path))
