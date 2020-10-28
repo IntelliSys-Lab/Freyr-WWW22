@@ -15,11 +15,9 @@
 # limitations under the License.
 #
 ---
-# This playbook prepares all target hosts for Openwhisk installation.
-# It will install all necessary packages to run Openwhisk playbooks.
+# This role will install all necessary packages and build docker images for Openwhisk.
 
-#- hosts: all:!ansible
-- hosts: edge, controllers, invokers
-  serial: "100%"
-  roles:
-  - prereq_build
+- name: update git and docker images
+  shell:
+      chdir: /home/ubuntu/openwhisk
+      cmd: "./update.sh" 

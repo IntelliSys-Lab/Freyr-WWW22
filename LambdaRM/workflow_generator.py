@@ -24,33 +24,32 @@ class WorkflowGenerator():
             function_id = row["FunctionId"]
             function_params_dict[function_id] = {}
 
-        for function_id in function_params_dict.keys():
-            for _, row in memory_traces.iterrows():
-                if row["FunctionId"] == function_id:
-                    # # Least hints provided by users
-                    # if row["AverageAllocatedMb"] < 256:
-                    #     least_hint = 1
-                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
-                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
-                    # elif row["AverageAllocatedMb"] > 2048:
-                    #     least_hint = 8
-                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
-                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
-                    # else:
-                    #     least_hint = int(row["AverageAllocatedMb"]/256) + 1
-                    #     function_params_dict[function_id]["memory_least_hint"] = least_hint
-                    #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
+        for _, row in memory_traces.iterrows():
+            function_id = row["FunctionId"]
+            
+            # # Least hints provided by users
+            # if row["AverageAllocatedMb"] < 256:
+            #     least_hint = 1
+            #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+            #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
+            # elif row["AverageAllocatedMb"] > 2048:
+            #     least_hint = 8
+            #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+            #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
+            # else:
+            #     least_hint = int(row["AverageAllocatedMb"]/256) + 1
+            #     function_params_dict[function_id]["memory_least_hint"] = least_hint
+            #     function_params_dict[function_id]["cpu_least_hint"] = least_hint
 
-                    # No hint, information-agnostic
-                    function_params_dict[function_id]["memory_least_hint"] = 1
-                    function_params_dict[function_id]["cpu_least_hint"] = 1
-                    function_params_dict[function_id]["memory_cap"] = 8
-                    function_params_dict[function_id]["cpu_cap"] = 8
+            # No hint, information-agnostic
+            function_params_dict[function_id]["memory_least_hint"] = 1
+            function_params_dict[function_id]["cpu_least_hint"] = 1
+            function_params_dict[function_id]["memory_cap"] = 8
+            function_params_dict[function_id]["cpu_cap"] = 8
 
-                    saturation_point = row["SaturationPoint"]
-                    function_params_dict[function_id]["memory_saturation_point"] = saturation_point
-                    function_params_dict[function_id]["cpu_saturation_point"] = saturation_point
-                    break
+            saturation_point = row["SaturationPoint"]
+            function_params_dict[function_id]["memory_saturation_point"] = saturation_point
+            function_params_dict[function_id]["cpu_saturation_point"] = saturation_point
 
         # Create Profile paramters
         function_params = []
@@ -130,7 +129,7 @@ class WorkflowGenerator():
             #     memory=param.memory_least_hint
             # ) 
 
-            # Initially set as hinted
+            # Initially set as saturation point
             function.set_function(
                 cpu=param.cpu_saturation_point, 
                 memory=param.memory_saturation_point

@@ -15,31 +15,11 @@
 # limitations under the License.
 #
 ---
-# This role will install all necessary packages and build docker images for Openwhisk.
+# This playbook prepares all target hosts for Openwhisk installation.
+# It will install all necessary packages to run Openwhisk playbooks.
 
-- name: check for git repo
-  shell: "ls /home/ubuntu/openwhisk"
-  ignore_errors: true
-  register: git_result
-
-- name: git clone openwhisk
-  git:
-      repo: "https://github.com/IntelliSys-Lab/LambdaRM-openwhisk.git"
-      dest: /home/ubuntu/openwhisk
-  become: true
-  when: git_result is failed
-
-- name: install prereq
-  shell:
-      chdir: /home/ubuntu/openwhisk/tools/ubuntu-setup
-      cmd: "./all.sh" 
-  become: true
-  when: git_result is failed
-
-- name: build docker images
-  shell:
-      chdir: /home/ubuntu/openwhisk
-      cmd: "./gradlew distDocker" 
-  become: true
-  when: git_result is failed
-
+#- hosts: all:!ansible
+- hosts: edge, controllers, invokers
+  serial: "100%"
+  roles:
+  - update

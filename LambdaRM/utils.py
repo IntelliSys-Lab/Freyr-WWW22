@@ -23,6 +23,8 @@ class Function():
         self.function_id = self.params.function_id
         self.sequence = self.params.sequence
 
+        self.function_name = self.function_id
+
         self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
         self.is_resource_changed = True
@@ -40,11 +42,28 @@ class Function():
     def get_function_id(self):
         return self.function_id
 
+    def get_function_name(self):
+        return self.function_name
+
     def get_request_record(self):
         return self.request_record
     
     def get_sequence(self):
         return self.sequence
+
+    def get_sequence_size(self):
+        sequence_size = 0
+        if self.sequence is not None:
+            sequence_size = len(self.sequence)
+
+        return sequence_size
+
+    def get_total_sequence_size(self):
+        total_sequence_size = 1
+        if self.sequence is not None:
+            total_sequence_size = total_sequence_size + len(self.sequence)
+
+        return total_sequence_size
 
     def get_cpu(self):
         return self.cpu
@@ -103,48 +122,69 @@ class Function():
             self.resource_adjust_direction[resource] = adjust
 
     def validate_resource_adjust(self, resource, adjust): 
-        if resource == 0:
-            if adjust == 1:
+        if resource == 0: # Cpu 
+            if adjust == 1: # Increase
                 if self.cpu == self.params.cpu_cap: # Implicit invalid action: reach cpu cap
                     return False 
-            else:
+            else: # Decrease
                 if self.cpu == self.params.cpu_least_hint: # Implicit invalid action: reach cpu least hint
                     return False 
-        else:
-            if adjust == 1:
+        else: # Memory
+            if adjust == 1: # Increase
                 if self.memory == self.params.memory_cap: # Implicit invalid action: reach memory cap
                     return False 
-            else:
+            else: # Decrease
                 if self.memory == self.params.memory_least_hint: # Implicit invalid action: reach memory least hint
                     return False 
-        
+                    
         if self.resource_adjust_direction[resource] == 0: # Not touched yet
             return True   
         else:
-            if self.resource_adjust_direction[resource] == adjust: # Correct direction as usual
+            if self.resource_adjust_direction[resource] == adjust: # Consistent direction
                 return True
             else: # Implicit invalid action: wrong direction
                 return False
     
     def translate_to_openwhisk(self):
-        openwhisk_input = (self.cpu - 1) * 9 + self.memory
+        openwhisk_input = (self.cpu - 1) * 8 + self.memory
         return openwhisk_input
 
     # Note: update too frequently may trigger function mismatch errors
     # Multiprocessing
-    def update_openwhisk(self, couch_link):
-        couch_client = couchdb.Server(couch_link)
-        couch_whisks = couch_client["whisk_distributed_whisks"]
-        doc_function = couch_whisks["guest/{}".format(self.function_id)]
-        doc_function["limits"]["memory"] = self.translate_to_openwhisk()
-        couch_whisks.save(doc_function)
+    # def update_openwhisk(self, couch_link):
+    #     couch_client = couchdb.Server(couch_link)
+    #     couch_whisks = couch_client["whisk_distributed_whisks"]
+    #     doc_function = couch_whisks["guest/{}".format(self.function_id)]
+    #     doc_function["limits"]["memory"] = self.translate_to_openwhisk()
+    #     couch_whisks.save(doc_function)
+
+    # def update_openwhisk(self, couch_link):
+    #     cmd = '{} action update {} -m {}'.format(WSK_CLI, self.function_id, self.translate_to_openwhisk())
+    #     run_cmd(cmd)
         
+    def update_openwhisk(self):
+        if "alexa" not in self.function_id and self.function_id != "imageProcessSequence":
+            self.function_name = "{}_{}".format(self.function_id, self.translate_to_openwhisk())
+        else:
+            cmd = '{} action update {} -m {}'.format(WSK_CLI, self.function_id, self.translate_to_openwhisk())
+            run_cmd(cmd)
+
+    # # Multiprocessing
+    # def invoke_openwhisk(self, result_dict):
+    #     if self.params.invoke_params == None:
+    #         cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_id, "{'print $6'}")
+    #     else:
+    #         cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_id, self.params.invoke_params, "{'print $6'}")
+        
+    #     request_id = str(run_cmd(cmd))
+    #     result_dict[self.function_id].append(request_id)
+
     # Multiprocessing
     def invoke_openwhisk(self, result_dict):
         if self.params.invoke_params == None:
-            cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_id, "{'print $6'}")
+            cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_name, "{'print $6'}")
         else:
-            cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_id, self.params.invoke_params, "{'print $6'}")
+            cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_name, self.params.invoke_params, "{'print $6'}")
         
         request_id = str(run_cmd(cmd))
         result_dict[self.function_id].append(request_id)
@@ -174,6 +214,37 @@ class Request():
 
     # Multiprocessing
     def try_update(self, result_dict, system_runtime, couch_link):
+        # # Check timeout first before check done
+        # if system_runtime - self.invoke_time > 120:
+        #     # Manually label timeout or error
+        #     # result_dict[self.function_id][self.request_id]["is_done"] = True
+        #     # result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
+        #     # result_dict[self.function_id][self.request_id]["is_timeout"] = True
+        #     # result_dict[self.function_id][self.request_id]["is_success"] = False
+        #     # result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+
+        #     # Try query via wsk cli
+        #     result = run_cmd('{} activation get {} | grep -v "ok"'.format(WSK_CLI, self.request_id))
+        #     try:
+        #         result_json = json.loads(result)
+        #         result_dict[self.function_id][self.request_id]["is_done"] = True
+        #         result_dict[self.function_id][self.request_id]["duration"] = result_json["duration"] / 1000 # Second
+        #         result_dict[self.function_id][self.request_id]["is_timeout"] = result_json["annotations"][3]["value"]
+        #         result_dict[self.function_id][self.request_id]["is_success"] = result_json["response"]["success"]
+
+        #         if len(result_json["annotations"]) == 6:
+        #             result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+        #         else:
+        #             result_dict[self.function_id][self.request_id]["is_cold_start"] = False
+        #     # Manually label timeout or error
+        #     except json.decoder.JSONDecodeError:
+        #         print("{}: {}".format(self.request_id, result))
+        #         result_dict[self.function_id][self.request_id]["is_done"] = True
+        #         result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
+        #         result_dict[self.function_id][self.request_id]["is_timeout"] = True
+        #         result_dict[self.function_id][self.request_id]["is_success"] = False
+        #         result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+        # else:
         couch_client = couchdb.Server(couch_link)
         couch_activations = couch_client["whisk_distributed_activations"]
         doc_request = couch_activations.get("guest/{}".format(self.request_id))
@@ -182,15 +253,21 @@ class Request():
         if doc_request is not None: 
             # Either timeout or error happened
             if len(doc_request["annotations"]) < 4:
-                # Manually rule out timeout requests
-                if system_runtime - self.invoke_time > 61:
+                # Try query via wsk cli
+                result = run_cmd('{} activation get {} | grep -v "ok"'.format(WSK_CLI, self.request_id))
+                try:
+                    result_json = json.loads(result)
                     result_dict[self.function_id][self.request_id]["is_done"] = True
-                    result_dict[self.function_id][self.request_id]["duration"] = 60 # Second
-                    result_dict[self.function_id][self.request_id]["is_timeout"] = True
-                    result_dict[self.function_id][self.request_id]["is_success"] = False
-                    result_dict[self.function_id][self.request_id]["is_cold_start"] = True
-                # Not done yet
-                else:
+                    result_dict[self.function_id][self.request_id]["duration"] = result_json["duration"] / 1000 # Second
+                    result_dict[self.function_id][self.request_id]["is_timeout"] = result_json["annotations"][3]["value"]
+                    result_dict[self.function_id][self.request_id]["is_success"] = result_json["response"]["success"]
+
+                    if len(result_json["annotations"]) == 6:
+                        result_dict[self.function_id][self.request_id]["is_cold_start"] = True
+                    else:
+                        result_dict[self.function_id][self.request_id]["is_cold_start"] = False
+                # Manually label timeout or error
+                except json.decoder.JSONDecodeError:
                     result_dict[self.function_id][self.request_id]["is_done"] = False
             # Request is done
             else:
@@ -283,11 +360,10 @@ class RequestRecord():
         else:
             if request.get_is_timeout() is True:
                 self.timeout_request_record.append(request)
-            elif request.get_is_success() is True:
+            elif request.get_is_success() is False:
                 self.error_request_record.append(request)
             else:
                 self.success_request_record.append(request)
-                
 
     def update_request(self, done_request_list):
         for request in done_request_list:
@@ -298,6 +374,7 @@ class RequestRecord():
             else:
                 self.success_request_record.append(request)
             
+        for request in done_request_list:
             self.undone_request_record.remove(request)
 
     def get_size(self):

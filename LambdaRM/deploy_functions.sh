@@ -1,26 +1,113 @@
 #! /bin/bash
 
+wsk="wsk -i"
+
+#
 # alu
+#
+
 cd ../../SAAF/python_alu/deploy
-./publish.sh 0 0 0 0 1 1
 
+# Destroy and prepare build folder.
+rm -rf build
+mkdir build
+
+# Copy files to build folder.
+cp -R ../src/* ./build
+cp -R ../platforms/ibm/* ./build
+cd ./build
+zip -X -r ./index.zip *
+
+for memory in $(seq 1 64)
+do
+    $wsk action update alu_$memory --kind python:3 --main main_alu --memory $memory index.zip
+done
+
+cd ../../../../openwhisk/LambdaRM
+
+#
 # ms
-cd ../../python_merge_sort/deploy
-./publish.sh 0 0 0 0 1 1
+#
 
+cd ../../SAAF/python_merge_sort/deploy
+
+# Destroy and prepare build folder.
+rm -rf build
+mkdir build
+
+# Copy files to build folder.
+cp -R ../src/* ./build
+cp -R ../platforms/ibm/* ./build
+cd ./build
+zip -X -r ./index.zip *
+
+for memory in $(seq 1 64)
+do
+    $wsk action update ms_$memory --kind python:3 --main main_ms --memory $memory index.zip
+done
+
+cd ../../../../openwhisk/LambdaRM
+
+#
 # gd
-cd ../../python_gradient_descend/deploy
-./publish.sh 0 0 0 0 1 1
+#
 
+cd ../../SAAF/python_gradient_descend/deploy
+
+# Destroy and prepare build folder.
+rm -rf build
+mkdir build
+
+# Copy files to build folder.
+cp -R ../src/* ./build
+cp -R ../platforms/ibm/* ./build
+cp -R virtualenv ./build
+cd ./build
+zip -X -r ./index.zip *
+
+for memory in $(seq 1 64)
+do
+    $wsk action update gd_$memory --kind python:3 --main main_gd --memory $memory index.zip
+done
+
+cd ../../../../openwhisk/LambdaRM
+
+#
 # knn
-cd ../../python_k_nearest_neighbor/deploy
-./publish.sh 0 0 0 0 1 1
+#
 
-# Image process sequence
-cd ../../../ServerlessBench/Testcase4-Application-breakdown
+cd ../../SAAF/python_k_nearest_neighbor/deploy
+
+# Destroy and prepare build folder.
+rm -rf build
+mkdir build
+
+# Copy files to build folder.
+cp -R ../src/* ./build
+cp -R ../platforms/ibm/* ./build
+cp -R virtualenv ./build
+cd ./build
+zip -X -r ./index.zip *
+
+for memory in $(seq 1 64)
+do
+    $wsk action update knn_$memory --kind python:3 --main main_knn --memory $memory index.zip
+done
+
+cd ../../../../openwhisk/LambdaRM
+
+#
+# image process sequence
+#
+
+cd ../../ServerlessBench/Testcase4-Application-breakdown
 ./deploy.sh --image-process
+cd ../../openwhisk/LambdaRM
 
-# Alexa skills
+#
+# alexa skills
+#
+
+cd ../../ServerlessBench/Testcase4-Application-breakdown
 ./deploy.sh --alexa
-
 cd ../../openwhisk/LambdaRM

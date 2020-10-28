@@ -10,6 +10,7 @@ from plotter import Plotter
 from ppo2_agent import PPO2Agent
 from utils import SystemTime, Request, ResourceUtilsRecord
 from run_command import run_cmd
+from params import WSK_CLI
 
 
 
@@ -113,6 +114,7 @@ class LambdaRM():
                         for function in self.profile.get_function_profile():
                             if function_id == function.get_function_id():
                                 function.set_resource_adjust(resource, adjust)
+                                break
             
             return False
         
@@ -126,21 +128,73 @@ class LambdaRM():
             else:
                 return False # Implicit invalid action
 
+    # # Multiprocessing
+    # def update_openwhisk(self):
+    #     jobs = []
+
+    #     for function in self.profile.function_profile:
+    #         if function.get_is_resource_changed() is True:
+    #             p = multiprocessing.Process(
+    #                 target=function.update_openwhisk,
+    #                 args=(self.couch_link,)
+    #             )
+    #             jobs.append(p)
+    #             p.start()
+        
+    #     for p in jobs:
+    #         p.join()
+
     # Multiprocessing
     def update_openwhisk(self):
+        # Update functions excluding alexa and imageProcessSequence entry
+        for function in self.profile.function_profile:
+            function_id = function.get_function_id()
+            if "alexa" not in function_id and function_id != "imageProcessSequence":
+                function.update_openwhisk()
+
+        entry = "imageProcessSequence"
+        member_list = [
+            "extractImageMetadata",
+            "transformMetadata",
+            "handler",
+            "thumbnail",
+            "storeImageMetadata"
+        ]
+        self.update_openwhisk_sequence(entry, member_list)
+
+        # Update the rest
         jobs = []
 
         for function in self.profile.function_profile:
-            if function.get_is_resource_changed() is True:
-                p = multiprocessing.Process(
-                    target=function.update_openwhisk,
-                    args=(self.couch_link,)
-                )
-                jobs.append(p)
-                p.start()
+            function_id = function.get_function_id()
+            if "alexa" in function_id or function_id == "imageProcessSequence":
+                if function.get_is_resource_changed() is True:
+                    p = multiprocessing.Process(
+                        target=function.update_openwhisk,
+                        args=()
+                    )
+                    jobs.append(p)
+                    p.start()
         
         for p in jobs:
             p.join()
+
+    # Update image processing sequence
+    def update_openwhisk_sequence(self, entry, member_list):
+        function_dict = {}
+        for function in self.profile.get_function_profile():
+            function_id = function.get_function_id()
+            function_dict[function_id] = function.get_function_name()
+
+        cmd = '{} action update {} --sequence'.format(WSK_CLI, entry)
+        for i in range(len(member_list)):
+            member = function_dict[member_list[i]]
+            if i == 0:
+                cmd = '{} {}'.format(cmd, member)
+            else:
+                cmd = '{},{}'.format(cmd, member)
+
+        run_cmd(cmd)
 
     # Multiprocessing
     def invoke_openwhisk(self):
@@ -165,12 +219,11 @@ class LambdaRM():
                 p.join()
 
             # Create requests according to the result dict
-            for function_id in result_dict.keys():
-                for function in self.profile.function_profile:
-                    if function_id == function.get_function_id():
-                        for request_id in result_dict[function_id]:
-                            request = Request(function_id, request_id, self.system_time.get_system_runtime())
-                            function.put_request(request)
+            for function in self.profile.function_profile:
+                function_id = function.get_function_id()
+                for request_id in result_dict[function_id]:
+                    request = Request(function_id, request_id, self.system_time.get_system_runtime())
+                    function.put_request(request)
     
     # Multiprocessing
     def try_update_request_record(self):
@@ -179,10 +232,11 @@ class LambdaRM():
         jobs = []
 
         for function in self.profile.function_profile:
-            result_dict[function.function_id] = manager.dict()
+            function_id = function.get_function_id()
+            result_dict[function_id] = manager.dict()
             for request in function.get_request_record().get_undone_request_record():
-                result_dict[function.function_id][request.request_id] = manager.dict()
-                result_dict[function.function_id][request.request_id]["is_done"] = False # Default value
+                result_dict[function_id][request.request_id] = manager.dict()
+                result_dict[function_id][request.request_id]["is_done"] = False # Default value
                 
                 p = multiprocessing.Process(
                     target=request.try_update,
@@ -244,7 +298,9 @@ class LambdaRM():
             
         # Update request cord of each function
         for function in self.profile.get_function_profile():
-            function.get_request_record().update_request(done_request_dict[function.get_function_id()])
+            function_id = function.get_function_id()
+            request_record = function.get_request_record()
+            request_record.update_request(done_request_dict[function_id])
 
         return total_timeout, total_error, total_completion_time
 
@@ -282,13 +338,21 @@ class LambdaRM():
             self.resource_utils_record.put_resource_utils(invoker, cpu_util, memory_util)
 
     def refresh_openwhisk(self):
-        cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
+        # cmd = "cd ../ansible && sudo ansible-playbook -i environments/distributed openwhisk.yml && cd ../LambdaRM"
+        cmd = "./refresh_openwhisk.sh"
+        run_cmd(cmd)
+        time.sleep(30)
+
+    def refresh_couchdb_and_openwhisk(self):
+        cmd = "./refresh_couchdb_and_openwhisk.sh"
         run_cmd(cmd)
         time.sleep(30)
 
     def cool_down_openwhisk(self):
-        if self.cool_down == "refresh":
+        if self.cool_down == "refresh_openwhisk":
             self.refresh_openwhisk()
+        elif self.cool_down == "refresh_couchdb_and_openwhisk":
+            self.refresh_couchdb_and_openwhisk()
         else:
             time.sleep(self.cool_down)
                                         
@@ -341,22 +405,43 @@ class LambdaRM():
         avg_completion_time_per_function = {}
 
         for function in self.profile.get_function_profile():
-            avg_completion_time_per_function[function.get_function_id()] = function.get_avg_completion_time()
+            function_id = function.get_function_id()
+            avg_completion_time_per_function[function_id] = function.get_avg_completion_time()
 
         return avg_completion_time_per_function
 
     def get_request_record_dict(self):
         request_record_dict = {}
         for function in self.profile.function_profile:
-            request_record_dict[function.function_id] = {}
+            function_id = function.get_function_id()
+            request_record_dict[function_id] = {}
+
             avg_completion_time, _, _ = function.get_request_record().get_avg_completion_time()
             avg_interval = function.get_avg_interval(self.system_time.get_system_runtime())
             cpu = function.get_cpu()
             memory = function.get_memory()
-            request_record_dict[function.function_id]["avg_completion_time"] = avg_completion_time
-            request_record_dict[function.function_id]["avg_interval"] = avg_interval
-            request_record_dict[function.function_id]["cpu"] = cpu
-            request_record_dict[function.function_id]["memory"] = memory
+            total_sequence_size = function.get_total_sequence_size()
+
+            is_timeout = False
+            is_success = True
+            request_record = function.get_request_record()
+            i = 1
+            while i <= request_record.get_size():
+                request = request_record.get_total_request_record()[-i]
+                if request.get_is_done() is True:
+                    is_timeout = request.get_is_timeout()
+                    is_success = request.get_is_success()
+                    break
+
+                i = i + 1
+
+            request_record_dict[function_id]["avg_completion_time"] = avg_completion_time
+            request_record_dict[function_id]["avg_interval"] = avg_interval
+            request_record_dict[function_id]["cpu"] = cpu
+            request_record_dict[function_id]["memory"] = memory
+            request_record_dict[function_id]["total_sequence_size"] = total_sequence_size
+            request_record_dict[function_id]["is_timeout"] = is_timeout
+            request_record_dict[function_id]["is_success"] = is_success
 
         return request_record_dict
 
@@ -622,7 +707,8 @@ class LambdaRM():
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
-            avg_completion_time_per_function_trend[function.get_function_id()] = []
+            function_id = function.get_function_id()
+            avg_completion_time_per_function_trend[function_id] = []
         
         # Start training
         for episode in range(max_episode):
@@ -751,16 +837,15 @@ class LambdaRM():
             actions = []
             
             for function in function_profile:
-                for key in resource_adjust_list.keys():
-                    if function.function_id == key:
-                        index = function_profile.index(function)
-                        
-                        if resource_adjust_list[key][0] != -1:
-                            adjust_cpu = index*4 + resource_adjust_list[key][0]
-                            actions.append(adjust_cpu)
-                        if resource_adjust_list[key][1] != -1:
-                            adjust_memory = index*4 + resource_adjust_list[key][1]
-                            actions.append(adjust_memory)
+                function_id = function.get_function_id()
+                index = function_profile.index(function)
+                
+                if resource_adjust_list[function_id][0] != -1:
+                    adjust_cpu = index*4 + resource_adjust_list[function_id][0]
+                    actions.append(adjust_cpu)
+                if resource_adjust_list[function_id][1] != -1:
+                    adjust_memory = index*4 + resource_adjust_list[function_id][1]
+                    actions.append(adjust_memory)
                             
             return actions
 
@@ -773,7 +858,8 @@ class LambdaRM():
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
-            avg_completion_time_per_function_trend[function.get_function_id()] = []
+            function_id = function.get_function_id()
+            avg_completion_time_per_function_trend[function_id] = []
         
         # Start training
         for episode in range(max_episode):
@@ -794,10 +880,11 @@ class LambdaRM():
             # Set up completion time record
             completion_time_decay_record = {}
             for function in self.profile.function_profile:
-                completion_time_decay_record[function.function_id] = {}
-                completion_time_decay_record[function.function_id]["old_completion_time"] = 0
-                completion_time_decay_record[function.function_id]["new_completion_time"] = 0
-                completion_time_decay_record[function.function_id]["decay"] = 1.0
+                function_id = function.get_function_id()
+                completion_time_decay_record[function_id] = {}
+                completion_time_decay_record[function_id]["old_completion_time"] = 0
+                completion_time_decay_record[function_id]["new_completion_time"] = 0
+                completion_time_decay_record[function_id]["decay"] = 1.0
 
             while True:
                 actual_time = actual_time + 1
@@ -810,7 +897,7 @@ class LambdaRM():
 
                     record = info["request_record_dict"]
                     # total_available_cpu = 8*10
-                    # total_available_memory = 8*10
+                    # total_available_memory = 32*10
                     total_available_cpu = info["total_available_cpu"]
                     total_available_memory = info["total_available_memory"] / 256
                     
@@ -818,10 +905,11 @@ class LambdaRM():
                     # Greedy resource adjustment: Completion time decay
                     #
 
-                    # Adjustment for each function
+                    # Adjustment for each function, default hold
                     resource_adjust_list = {}
                     for function in self.profile.function_profile:
-                        resource_adjust_list[function.function_id] = []
+                        function_id = function.get_function_id()
+                        resource_adjust_list[function_id] = [-1, -1]
                     
                     # Update completion time decay for each function
                     for id in record.keys():
@@ -831,37 +919,162 @@ class LambdaRM():
                         completion_time_decay_record[id]["old_completion_time"] = old_completion_time
                         completion_time_decay_record[id]["new_completion_time"] = new_completion_time
 
-                        # Check if it's just a beginning
+                        # Check if it's just beginning
                         if old_completion_time != 0 and new_completion_time != 0: 
                             decay = new_completion_time / old_completion_time
                             completion_time_decay_record[id]["decay"] = decay
 
-                        cpu = record[id]["cpu"]
-                        memory = record[id]["memory"]
-                        total_available_cpu = total_available_cpu - cpu
-                        total_available_memory = total_available_memory - memory
+                        total_available_cpu = total_available_cpu - record[id]["avg_interval"] * record[id]["total_sequence_size"] * record[id]["cpu"]
+                        total_available_memory = total_available_memory - record[id]["avg_interval"] * record[id]["total_sequence_size"] * record[id]["memory"]
+                    
+                    print("")
+                    print("Initial total_available_cpu: {}".format(total_available_cpu))
+                    print("Initial total_available_memory: {}".format(total_available_memory))
 
-                    # Increase resources in a greedy way. 
-                    pq = queue.PriorityQueue()
+                    # Increase/decrease resources in a greedy way. 
+                    pq_increase = queue.PriorityQueue()
+                    pq_decrease = queue.PriorityQueue()
+                    timeout_or_error_list = []
+                    potential_available_cpu = 0
+                    potential_available_memory = 0
+
                     for id in completion_time_decay_record.keys():
-                        decay = completion_time_decay_record[id]["decay"]
-                        if decay <= 1.0:
-                            resource_adjust_list[id] = [-1, -1] # Hold
-                        else:
-                            pq.put((-decay, id))
+                        is_timeout = record[id]["is_timeout"]
+                        is_success = record[id]["is_success"]
 
-                    while pq.empty() is False:
-                        id = pq.get()[1]
-                        avg_interval = record[id]["avg_interval"]
-                        
-                        if avg_interval*1 <= total_available_cpu and avg_interval*1 <= total_available_memory:
-                            # Increase one slot for CPU and memory
-                            resource_adjust_list[id] = [1, 3] 
-                            total_available_cpu = total_available_cpu - avg_interval*1
-                            total_available_memory = total_available_memory - avg_interval*1
+                        if is_timeout is True or is_success is False:
+                            timeout_or_error_list.append(id)
                         else:
-                            # Hold
-                            resource_adjust_list[id] = [-1, -1] 
+                            decay = completion_time_decay_record[id]["decay"]
+                            if decay > 1.0: # Increase
+                                pq_increase.put((-decay, id))
+                            elif decay < 1.0: # Decrease
+                                pq_decrease.put((decay, id))
+                                potential_available_cpu = record[id]["avg_interval"] * record[id]["total_sequence_size"] * 1
+                                potential_available_memory = record[id]["avg_interval"] * record[id]["total_sequence_size"] * 1
+
+                    # Perform greedy
+                    # if total_available_cpu + potential_available_cpu >= 0 and total_available_memory + potential_available_memory >= 0:
+                    if total_available_cpu >= 0 and total_available_memory >= 0:
+                        for id in timeout_or_error_list:
+                            resource_adjust_list[id] = [1, 3] 
+                            total_available_cpu = total_available_cpu - record[id]["avg_interval"] * record[id]["total_sequence_size"] * 1
+                            total_available_memory = total_available_memory - record[id]["avg_interval"] * record[id]["total_sequence_size"] * 1
+
+                            print("Increase {}, decay: {}, cpu: {}, memory: {}".format(
+                                id, completion_time_decay_record[id]["decay"], record[id]["cpu"], record[id]["memory"])
+                            )
+
+                        while pq_increase.empty() is False:
+                            id_increase = pq_increase.get()[1]
+                            
+                            while pq_decrease.empty() is False and \
+                                (record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1 > total_available_cpu or \
+                                    record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1 > total_available_memory):
+                                id_decrease = pq_decrease.get()[1]
+                                # Check this is knn and reaching its error boundary
+                                if id_decrease == "knn":
+                                    if record[id_decrease]["cpu"] == 2 or record[id_decrease]["memory"] == 2:
+                                        # Hold
+                                        resource_adjust_list[id_decrease] = [-1, -1] 
+                                        print("Hold {}, decay: {}, cpu: {}, memory: {}".format(
+                                            id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                                        )
+                                    else:
+                                        # Decrease
+                                        resource_adjust_list[id_decrease] = [0, 2] 
+                                        total_available_cpu = total_available_cpu + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+                                        total_available_memory = total_available_memory + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+
+                                        print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                                            id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                                        )
+                                else:
+                                    # Decrease one slot of CPU and memory for better performed functions
+                                    resource_adjust_list[id_decrease] = [0, 2] 
+                                    total_available_cpu = total_available_cpu + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+                                    total_available_memory = total_available_memory + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+
+                                    print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                                        id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                                    )
+
+                            if record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1 <= total_available_cpu and \
+                                record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1 <= total_available_memory:
+                                # Increase one slot of CPU and memory for worse performed functions
+                                resource_adjust_list[id_increase] = [1, 3] 
+                                total_available_cpu = total_available_cpu - record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+                                total_available_memory = total_available_memory - record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+
+                                print("Increase {}, decay: {}, cpu: {}, memory: {}".format(
+                                    id_increase, completion_time_decay_record[id_increase]["decay"], record[id_increase]["cpu"], record[id_increase]["memory"])
+                                )
+                            else:
+                                # Hold
+                                resource_adjust_list[id_increase] = [-1, -1] 
+
+                                print("Hold {}, decay: {}, cpu: {}, memory: {}".format(
+                                    id_increase, completion_time_decay_record[id_increase]["decay"], record[id_increase]["cpu"], record[id_increase]["memory"])
+                                )
+                    # Decrease one slot of CPU and memory for every function since total available resources are below zero
+                    # else: 
+                    #     while pq_increase.empty() is False:
+                    #         id_increase = pq_increase.get()[1]
+
+                    #         # Check this is knn and reaching its error boundary
+                    #         if id_increase == "knn":
+                    #             if record[id_increase]["cpu"] == 2 or record[id_increase]["memory"] == 2:
+                    #                 # Hold
+                    #                 resource_adjust_list[id_increase] = [-1, -1] 
+                    #                 print("Hold {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                     id_increase, completion_time_decay_record[id_increase]["decay"], record[id_increase]["cpu"], record[id_increase]["memory"])
+                    #                 )
+                    #             else:
+                    #                 # Decrease
+                    #                 resource_adjust_list[id_increase] = [0, 2] 
+                    #                 total_available_cpu = total_available_cpu + record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+                    #                 total_available_memory = total_available_memory + record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+
+                    #                 print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                     id_increase, completion_time_decay_record[id_increase]["decay"], record[id_increase]["cpu"], record[id_increase]["memory"])
+                    #                 )
+                    #         else:
+                    #             resource_adjust_list[id_increase] = [0, 2] 
+                    #             total_available_cpu = total_available_cpu + record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+                    #             total_available_memory = total_available_memory + record[id_increase]["avg_interval"] * record[id_increase]["total_sequence_size"] * 1
+
+                    #             print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                 id_increase, completion_time_decay_record[id_increase]["decay"], record[id_increase]["cpu"], record[id_increase]["memory"])
+                    #             )
+
+                    #     while pq_decrease.empty() is False:
+                    #         id_decrease = pq_decrease.get()[1]
+
+                    #         # Check this is knn and reaching its error boundary
+                    #         if id_decrease == "knn":
+                    #             if record[id_decrease]["cpu"] == 2 or record[id_decrease]["memory"] == 2:
+                    #                 # Hold
+                    #                 resource_adjust_list[id_decrease] = [-1, -1] 
+                    #                 print("Hold {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                     id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                    #                 )
+                    #             else:
+                    #                 # Decrease
+                    #                 resource_adjust_list[id_decrease] = [0, 2] 
+                    #                 total_available_cpu = total_available_cpu + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+                    #                 total_available_memory = total_available_memory + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+
+                    #                 print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                     id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                    #                 )
+                    #         else:
+                    #             resource_adjust_list[id_decrease] = [0, 2] 
+                    #             total_available_cpu = total_available_cpu + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+                    #             total_available_memory = total_available_memory + record[id_decrease]["avg_interval"] * record[id_decrease]["total_sequence_size"] * 1
+
+                    #             print("Decrease {}, decay: {}, cpu: {}, memory: {}".format(
+                    #                 id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
+                    #             )
                     
                     action = encode_action(self.profile.function_profile, resource_adjust_list)
 
@@ -977,7 +1190,8 @@ class LambdaRM():
         loss_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
-            avg_completion_time_per_function_trend[function.get_function_id()] = []
+            function_id = function.get_function_id()
+            avg_completion_time_per_function_trend[function_id] = []
         
         # Pinpoint best avg completion time model
         min_avg_completion_time = 10e8
@@ -1150,7 +1364,8 @@ class LambdaRM():
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
         for function in self.profile.get_function_profile():
-            avg_completion_time_per_function_trend[function.get_function_id()] = []
+            function_id = function.get_function_id()
+            avg_completion_time_per_function_trend[function_id] = []
         
         # Start training
         for episode in range(max_episode):

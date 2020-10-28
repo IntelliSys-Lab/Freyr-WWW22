@@ -30,26 +30,31 @@ def launch():
         couch_port = "5984",
         # cool_down="refresh",
         cool_down=65,
-        interval_limit=1,
+        interval_limit=5,
         fail_penalty=60,
         decay_factor=0.9,
         profile=profile,
         timetable=timetable,
     )
+
+    # lambda_rm.refresh_couchdb_and_openwhisk()
+    # lambda_rm.refresh_openwhisk()
     
     # # Fixed RM
     # lambda_rm.refresh_openwhisk()
-    # lambda_rm.fixed_rm(
-    #     max_episode=10,
-    #     plot_prefix_name="FixedRM",
-    #     save_plot=True,
-    #     show_plot=False
-    # )
+    lambda_rm.fixed_rm(
+        # max_episode=10,
+        max_episode=1,
+        plot_prefix_name="FixedRM",
+        save_plot=True,
+        show_plot=False
+    )
 
     # Greedy RM
     # lambda_rm.refresh_openwhisk()
     lambda_rm.greedy_rm(
-        max_episode=10,
+        # max_episode=10,
+        max_episode=1,
         plot_prefix_name="GreedyRM",
         save_plot=True,
         show_plot=False
@@ -64,7 +69,7 @@ def launch():
     #     show_plot=False
     # )
     
-    # # Eval best timeout/error model
+    # # Eval best timeout or error model
     # lambda_rm.refresh_openwhisk()
     # lambda_rm.eval(
     #     max_episode=10,

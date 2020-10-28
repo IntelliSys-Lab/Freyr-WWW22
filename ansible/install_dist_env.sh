@@ -46,20 +46,20 @@
 # source ~/.bashrc
 
 #
-# Install prerequisites of distributed cluster for openwhisk
-#
-
-sudo ansible all -i environments/distributed -m ping
-sudo ansible-playbook -i environments/distributed setup.yml
-sudo ansible-playbook -i environments/distributed prereq_build.yml 
-#sudo ansible-playbook -i environments/distributed prereq.yml 
-
-#
 # Build docker images on bootstrapper (may not be necessary)
 #
 
 #cd ../ && sudo ./gradlew distDocker
 #cd ansible
+
+#
+# Install prerequisites of distributed cluster for openwhisk
+#
+
+sudo ansible all -i environments/distributed -m ping
+sudo ansible-playbook -i environments/distributed update.yml 
+sudo ansible-playbook -i environments/distributed setup.yml
+#sudo ansible-playbook -i environments/distributed prereq.yml 
 
 #
 # Boot openwhisk cluster

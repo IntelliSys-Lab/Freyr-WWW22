@@ -1,5 +1,7 @@
 import couchdb
 import docker
+import json
+import psutil
 
 from utils import run_cmd
 from params import WSK_CLI
@@ -26,11 +28,23 @@ from params import WSK_CLI
 #     if request_id in couch_activations:
 #         print(i)
 
+cpu_times = psutil.cpu_times()
+cpu_stats = psutil.cpu_stats()
+cpu_freq = psutil.cpu_freq()
+cpu_percent = psutil.cpu_percent()
+cpu_count = psutil.cpu_count()
+load_avg = psutil.getloadavg()
 
-docker_client = docker.from_env()
-# docker_api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
+virtual_memory = psutil.virtual_memory()
+swap_memory = psutil.swap_memory()
 
-for container in docker_client.api.containers(filters={"name": "t"}):
-    id = container["Id"]
-    print(docker_client.api.inspect_container(id)["HostConfig"]["CpuShares"])
+disk_partitions = psutil.disk_partitions()
+disk_usage = psutil.disk_usage('/')
+disk_io_counters = psutil.disk_io_counters()
 
+net_io_counters = psutil.net_io_counters()
+net_connections = psutil.net_connections()
+net_if_addrs = psutil.net_if_addrs()
+net_if_stats = psutil.net_if_stats()
+
+print(load_avg[0])
