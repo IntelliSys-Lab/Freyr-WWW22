@@ -1,4 +1,5 @@
 import couchdb
+import redis
 import docker
 import json
 import psutil
@@ -28,23 +29,23 @@ from params import WSK_CLI
 #     if request_id in couch_activations:
 #         print(i)
 
-cpu_times = psutil.cpu_times()
-cpu_stats = psutil.cpu_stats()
-cpu_freq = psutil.cpu_freq()
-cpu_percent = psutil.cpu_percent()
-cpu_count = psutil.cpu_count()
-load_avg = psutil.getloadavg()
+# cpu_times = psutil.cpu_times()
+# cpu_stats = psutil.cpu_stats()
+# cpu_freq = psutil.cpu_freq()
+# cpu_percent = psutil.cpu_percent()
+# cpu_count = psutil.cpu_count()
+# load_avg = psutil.getloadavg()
 
-virtual_memory = psutil.virtual_memory()
-swap_memory = psutil.swap_memory()
+# virtual_memory = psutil.virtual_memory()
+# swap_memory = psutil.swap_memory()
 
-disk_partitions = psutil.disk_partitions()
-disk_usage = psutil.disk_usage('/')
-disk_io_counters = psutil.disk_io_counters()
+# disk_partitions = psutil.disk_partitions()
+# disk_usage = psutil.disk_usage('/')
+# disk_io_counters = psutil.disk_io_counters()
 
-net_io_counters = psutil.net_io_counters()
-net_connections = psutil.net_connections()
-net_if_addrs = psutil.net_if_addrs()
-net_if_stats = psutil.net_if_stats()
+# net_io_counters = psutil.net_io_counters()
+# net_connections = psutil.net_connections()
+# net_if_addrs = psutil.net_if_addrs()
+# net_if_stats = psutil.net_if_stats()
 
-print(load_avg[0])
+# print(load_avg[0])

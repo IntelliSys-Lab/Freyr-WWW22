@@ -40,8 +40,7 @@ def launch():
     # lambda_rm.refresh_couchdb_and_openwhisk()
     # lambda_rm.refresh_openwhisk()
     
-    # # Fixed RM
-    # lambda_rm.refresh_openwhisk()
+    # Fixed RM
     lambda_rm.fixed_rm(
         # max_episode=10,
         max_episode=1,
@@ -52,13 +51,13 @@ def launch():
 
     # Greedy RM
     # lambda_rm.refresh_openwhisk()
-    lambda_rm.greedy_rm(
-        # max_episode=10,
-        max_episode=1,
-        plot_prefix_name="GreedyRM",
-        save_plot=True,
-        show_plot=False
-    )
+    # lambda_rm.greedy_rm(
+    #     # max_episode=10,
+    #     max_episode=1,
+    #     plot_prefix_name="GreedyRM",
+    #     save_plot=True,
+    #     show_plot=False
+    # )
 
     # # Train
     # lambda_rm.refresh_openwhisk()
@@ -69,22 +68,12 @@ def launch():
     #     show_plot=False
     # )
     
-    # # Eval best timeout or error model
+    # # Eval the best model
     # lambda_rm.refresh_openwhisk()
     # lambda_rm.eval(
     #     max_episode=10,
-    #     checkpoint_path="ckpt/best_timeout_or_error.pth",
-    #     plot_prefix_name="LambdaRM_eval_best_timeout_or_error",
-    #     save_plot=True,
-    #     show_plot=False,
-    # )
-
-    # # Eval best avg completion time model
-    # lambda_rm.refresh_openwhisk()
-    # lambda_rm.eval(
-    #     max_episode=10,
-    #     checkpoint_path="ckpt/best_avg_completion_time.pth",
-    #     plot_prefix_name="LambdaRM_eval_best_avg_completion_time",
+    #     checkpoint_path="ckpt/best_model.pth",
+    #     plot_prefix_name="LambdaRM_eval",
     #     save_plot=True,
     #     show_plot=False,
     # )

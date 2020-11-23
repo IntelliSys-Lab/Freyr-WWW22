@@ -25,7 +25,6 @@ class Function():
 
         self.function_name = self.function_id
 
-        self.request_record = RequestRecord()
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
         self.is_resource_changed = True
     
@@ -36,18 +35,12 @@ class Function():
     def set_invoke_params(self, params):
         self.params.invoke_params = params
 
-    def put_request(self, request):
-        self.request_record.put_request(request)
-
     def get_function_id(self):
         return self.function_id
 
     def get_function_name(self):
         return self.function_name
 
-    def get_request_record(self):
-        return self.request_record
-    
     def get_sequence(self):
         return self.sequence
 
@@ -74,22 +67,6 @@ class Function():
     def get_is_resource_changed(self):
         return self.is_resource_changed
 
-    def get_avg_interval(self, system_runtime):
-        if system_runtime == 0:
-            avg_interval = 0
-        else:
-            avg_interval = self.request_record.get_size() / system_runtime
-        
-        return avg_interval
-
-    def get_avg_completion_time(self):
-        avg_completion_time, _, _ = self.request_record.get_avg_completion_time()
-        return avg_completion_time
-    
-    def get_is_cold_start(self):
-        is_cold_start = self.request_record.get_is_cold_start()
-        return is_cold_start
-    
     def set_resource_adjust(self, resource, adjust):
         # Adjust resources
         next_cpu = self.cpu
@@ -192,9 +169,6 @@ class Function():
     def reset_resource_adjust_direction(self):
         self.resource_adjust_direction = [0, 0]
 
-    def reset_request_record(self):
-        self.request_record.reset()
-        
 
 class Request():
     """
@@ -342,42 +316,113 @@ class Request():
 
 class RequestRecord():
     """
-    Recording of either done or undone requests per Function
+    Recording of requests both in total and per Function
     """
 
-    def __init__(self):
+    def __init__(self, function_profile):
+        # General records
         self.total_request_record = []
         self.success_request_record = []
         self.undone_request_record = []
         self.timeout_request_record = []
         self.error_request_record = []
 
-    def put_request(self, request):
-        self.total_request_record.append(request)
+        # Records per function
+        self.total_request_record_per_function = {}
+        self.success_request_record_per_function = {}
+        self.undone_request_record_per_function = {}
+        self.timeout_request_record_per_function = {}
+        self.error_request_record_per_function = {}
 
-        if request.get_is_done() is False:
-            self.undone_request_record.append(request)
+        for function in function_profile:
+            function_id = function.get_function_id()
+            self.total_request_record_per_function[function_id] = []
+            self.success_request_record_per_function[function_id] = []
+            self.undone_request_record_per_function[function_id] = []
+            self.timeout_request_record_per_function[function_id] = []
+            self.error_request_record_per_function[function_id] = []
+
+    def put_requests(self, request_list):
+        if isinstance(request_list, Request):
+            request = request_list
+            function_id = request.get_function_id()
+
+            self.total_request_record.append(request)
+            self.total_request_record_per_function[function_id].append(request)
+
+            if request.get_is_done() is False: # Undone?
+                self.undone_request_record.append(request)
+                self.undone_request_record_per_function[function_id].append(request)
+            else: # Done
+                if request.get_is_success() is True: # Success?
+                    self.success_request_record.append(request)
+                    self.success_request_record_per_function[function_id].append(request)
+                else: # Not success
+                    if request.get_is_timeout() is True: # Timeout?
+                        self.timeout_request_record.append(request)
+                        self.timeout_request_record_per_function[function_id].append(request)
+                    else: # Error
+                        self.error_request_record.append(request)
+                        self.error_request_record_per_function[function_id].append(request)
         else:
-            if request.get_is_timeout() is True:
-                self.timeout_request_record.append(request)
-            elif request.get_is_success() is False:
-                self.error_request_record.append(request)
-            else:
-                self.success_request_record.append(request)
+            for request in request_list:
+                function_id = request.get_function_id()
 
-    def update_request(self, done_request_list):
-        for request in done_request_list:
-            if request.get_is_timeout() is True:
-                self.timeout_request_record.append(request)
-            elif request.get_is_success() is False:
-                self.error_request_record.append(request)
-            else:
+                self.total_request_record.append(request)
+                self.total_request_record_per_function[function_id].append(request)
+
+                if request.get_is_done() is False: # Undone?
+                    self.undone_request_record.append(request)
+                    self.undone_request_record_per_function[function_id].append(request)
+                else: # Done
+                    if request.get_is_success() is True: # Success?
+                        self.success_request_record.append(request)
+                        self.success_request_record_per_function[function_id].append(request)
+                    else: # Not success
+                        if request.get_is_timeout() is True: # Timeout?
+                            self.timeout_request_record.append(request)
+                            self.timeout_request_record_per_function[function_id].append(request)
+                        else: # Error
+                            self.error_request_record.append(request)
+                            self.error_request_record_per_function[function_id].append(request)
+
+    def update_requests(self, done_request_list):
+        if isinstance(done_request_list, Request):
+            request = done_request_list
+            function_id = request.get_function_id()
+
+            if request.get_is_success() is True: # Success?
                 self.success_request_record.append(request)
-            
-        for request in done_request_list:
+                self.success_request_record_per_function[function_id].append(request)
+            else: # Not success
+                if request.get_is_timeout() is True: # Timeout?
+                    self.timeout_request_record.append(request)
+                    self.timeout_request_record_per_function[function_id].append(request)
+                else: # Error
+                    self.error_request_record.append(request)
+                    self.error_request_record_per_function[function_id].append(request)
+
             self.undone_request_record.remove(request)
+            self.undone_request_record_per_function[function_id].remove(request)
+        else:
+            for request in done_request_list:
+                function_id = request.get_function_id()
 
-    def get_size(self):
+                if request.get_is_success() is True: # Success?
+                    self.success_request_record.append(request)
+                    self.success_request_record_per_function[function_id].append(request)
+                else: # Not success
+                    if request.get_is_timeout() is True: # Timeout?
+                        self.timeout_request_record.append(request)
+                        self.timeout_request_record_per_function[function_id].append(request)
+                    else: # Error
+                        self.error_request_record.append(request)
+                        self.error_request_record_per_function[function_id].append(request)
+
+                self.undone_request_record.remove(request)
+                self.undone_request_record_per_function[function_id].remove(request)
+
+    def get_total_size(self):
         total_size = len(self.total_request_record)
         return total_size
 
@@ -389,22 +434,13 @@ class RequestRecord():
         success_size = len(self.success_request_record)
         return success_size
 
-    def get_error_size(self):
-        error_size = len(self.error_request_record)
-        return error_size
-
-    # # Deprecated: no need for timestamp when counting timeouts
-    # def get_current_timeout_size(self, system_runtime):
-    #     current_timeout_size = 0
-    #     for request in self.timeout_request_record:
-    #         if request.get_done_time() == system_runtime:
-    #             current_timeout_size = current_timeout_size + 1
-
-    #     return current_timeout_size
-
     def get_timeout_size(self):
         timeout_size = len(self.timeout_request_record)
         return timeout_size
+        
+    def get_error_size(self):
+        error_size = len(self.error_request_record)
+        return error_size
 
     def get_avg_completion_time(self):
         request_num = 0
@@ -423,13 +459,64 @@ class RequestRecord():
         else:
             avg_completion_time = total_completion_time / request_num
 
-        return avg_completion_time, request_num, total_completion_time
+        return avg_completion_time
 
-    def get_is_cold_start(self):
-        if self.get_size() == 0:
+    def get_avg_interval(self, system_time):
+        if system_time == 0:
+            avg_interval = 0
+        else:
+            avg_interval = len(self.total_request_record) / system_time
+
+        return avg_interval
+
+    def get_total_size_per_function(self, function_id):
+        total_size_per_function = len(self.total_request_record_per_function[function_id])
+        return total_size_per_function
+
+    def get_undone_size_per_function(self, function_id):
+        undone_size_per_function = len(self.undone_request_record_per_function[function_id])
+        return undone_size_per_function
+
+    def get_success_size_per_function(self, function_id):
+        success_size_per_function = len(self.success_request_record_per_function[function_id])
+        return success_size_per_function
+
+    def get_timeout_size_per_function(self, function_id):
+        timeout_size_per_function = len(self.timeout_request_record_per_function[function_id])
+        return timeout_size_per_function
+
+    def get_avg_completion_time_per_function(self, function_id):
+        request_num = 0
+        total_completion_time = 0
+
+        for request in self.success_request_record_per_function[function_id]:
+            request_num = request_num + 1
+            total_completion_time = total_completion_time + request.get_completion_time()
+
+        for request in self.timeout_request_record_per_function[function_id]:
+            request_num = request_num + 1
+            total_completion_time = total_completion_time + request.get_completion_time()
+        
+        if request_num == 0:
+            avg_completion_time_per_function = 0
+        else:
+            avg_completion_time_per_function = total_completion_time / request_num
+
+        return avg_completion_time_per_function
+
+    def get_avg_interval_per_function(self, system_time, function_id):
+        if system_time == 0:
+            avg_interval_per_function = 0
+        else:
+            avg_interval_per_function = len(self.total_request_record_per_function[function_id]) / system_time
+
+        return avg_interval_per_function
+
+    def get_is_cold_start_per_function(self, function_id):
+        if self.get_total_size_per_function(function_id) == 0:
             is_cold_start = True
         else:
-            is_cold_start = self.total_request_record[-1].get_is_cold_start()
+            is_cold_start = self.total_request_record_per_function[function_id][-1].get_is_cold_start()
 
         if is_cold_start is False:
             return 0
@@ -448,11 +535,37 @@ class RequestRecord():
     def get_timeout_request_record(self):
         return self.timeout_request_record
 
+    def get_error_request_record(self):
+        return self.error_request_record
+
+    def get_total_request_record_per_function(self, function_id):
+        return self.total_request_record_per_function[function_id]
+
+    def get_success_request_record_per_function(self, function_id):
+        return self.success_request_record_per_function[function_id]
+
+    def get_undone_request_record_per_function(self, function_id):
+        return self.undone_request_record_per_function[function_id]
+
+    def get_timeout_request_record_per_function(self, function_id):
+        return self.timeout_request_record_per_function[function_id]
+
+    def get_error_request_record_per_function(self, function_id):
+        return self.error_request_record_per_function[function_id]
+
     def reset(self):
+        self.total_request_record = []
         self.success_request_record = []
         self.undone_request_record = []
         self.timeout_request_record = []
         self.error_request_record = []
+
+        for function_id in self.total_request_record_per_function.keys():
+            self.total_request_record_per_function[function_id] = []
+            self.success_request_record_per_function[function_id] = []
+            self.undone_request_record_per_function[function_id] = []
+            self.timeout_request_record_per_function[function_id] = []
+            self.error_request_record_per_function[function_id] = []
 
 
 class ResourceUtilsRecord():

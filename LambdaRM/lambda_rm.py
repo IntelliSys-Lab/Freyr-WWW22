@@ -8,7 +8,7 @@ import queue
 from logger import Logger
 from plotter import Plotter
 from ppo2_agent import PPO2Agent
-from utils import SystemTime, Request, ResourceUtilsRecord
+from utils import SystemTime, Request, RequestRecord, ResourceUtilsRecord
 from run_command import run_cmd
 from params import WSK_CLI
 
@@ -68,6 +68,9 @@ class LambdaRM():
 
         # Set up logger module
         self.logger_wrapper = Logger()
+
+        # Set up request record
+        self.request_record = RequestRecord(self.profile.get_function_profile())
 
         # Set up resource utils record
         self.resource_utils_record = ResourceUtilsRecord(self.n_invoker)
@@ -205,8 +208,9 @@ class LambdaRM():
             jobs = []
 
             for function_i in range(self.profile.get_size()):
-                function = self.profile.function_profile[function_i]
-                result_dict[function.function_id] = manager.list()
+                function = self.profile.get_function_profile()[function_i]
+                function_id = function.get_function_id()
+                result_dict[function_id] = manager.list()
                 for _ in range(timestep[function_i]):
                     p = multiprocessing.Process(
                         target=function.invoke_openwhisk,
@@ -219,7 +223,7 @@ class LambdaRM():
                 p.join()
 
             # Create requests according to the result dict
-            for function in self.profile.function_profile:
+            for function in self.profile.get_function_profile():
                 function_id = function.get_function_id()
                 for request_id in result_dict[function_id]:
                     request = Request(function_id, request_id, self.system_time.get_system_runtime())
@@ -231,12 +235,13 @@ class LambdaRM():
         result_dict = manager.dict()
         jobs = []
 
-        for function in self.profile.function_profile:
+        for function in self.profile.get_function_profile():
             function_id = function.get_function_id()
             result_dict[function_id] = manager.dict()
-            for request in function.get_request_record().get_undone_request_record():
-                result_dict[function_id][request.request_id] = manager.dict()
-                result_dict[function_id][request.request_id]["is_done"] = False # Default value
+            for request in self.request_record.get_undone_request_record_per_function(function_id):
+                request_id = request.get_request_id()
+                result_dict[function_id][request_id] = manager.dict()
+                result_dict[function_id][request_id]["is_done"] = False # Default value
                 
                 p = multiprocessing.Process(
                     target=request.try_update,
@@ -257,13 +262,12 @@ class LambdaRM():
         total_timeout = 0
         total_error = 0
         total_completion_time = 0
-        done_request_dict = {}
+        done_request_list = []
 
         for function in self.profile.function_profile:
             function_id = function.get_function_id()
-            done_request_dict[function_id] = []
 
-            for request in function.get_request_record().get_undone_request_record():
+            for request in self.request_record.get_undone_request_record_per_function(function_id):
                 request_id = request.get_request_id()
 
                 # Check if done
@@ -294,13 +298,10 @@ class LambdaRM():
                         completion_time=duration,
                         is_cold_start=is_cold_start
                     )
-                    done_request_dict[function_id].append(request)
+                    done_request_list.append(request)
             
-        # Update request cord of each function
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
-            request_record = function.get_request_record()
-            request_record.update_request(done_request_dict[function_id])
+        # Update request records
+        self.request_record.update_requests(done_request_list)
 
         return total_timeout, total_error, total_completion_time
 
@@ -356,80 +357,23 @@ class LambdaRM():
         else:
             time.sleep(self.cool_down)
                                         
-    def get_n_undone_request_from_profile(self):
-        n_undone_request = 0
-        for function in self.profile.function_profile:
-            n_undone_request = n_undone_request + function.get_request_record().get_undone_size()
-
-        return n_undone_request
-
-    # Deprecated
-    # def get_current_timeout_num(self):
-    #     n_timeout = 0
-    #     for function in self.profile.function_profile:
-    #         n_timeout = n_timeout + function.get_request_record().get_current_timeout_size(self.system_time.get_system_runtime())
-
-    #     return n_timeout
-
-    def get_total_timeout_num(self):
-        n_timeout = 0
-        for function in self.profile.get_function_profile():
-            n_timeout = n_timeout + function.get_request_record().get_timeout_size()
-
-        return n_timeout
-
-    def get_total_error_num(self):
-        n_error = 0
-        for function in self.profile.get_function_profile():
-            n_error = n_error + function.get_request_record().get_error_size()
-
-        return n_error
-
-    def get_avg_completion_time(self):
-        request_num = 0
-        total_completion_time = 0
-
-        for function in self.profile.function_profile:
-            _, r, t = function.get_request_record().get_avg_completion_time()
-            request_num = request_num + r
-            total_completion_time = total_completion_time + t
-            
-        if request_num == 0:
-            avg_completion_time = 0
-        else:
-            avg_completion_time = total_completion_time / request_num
-
-        return avg_completion_time
-
-    def get_avg_completion_time_per_function(self):
-        avg_completion_time_per_function = {}
-
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
-            avg_completion_time_per_function[function_id] = function.get_avg_completion_time()
-
-        return avg_completion_time_per_function
-
     def get_request_record_dict(self):
         request_record_dict = {}
         for function in self.profile.function_profile:
             function_id = function.get_function_id()
             request_record_dict[function_id] = {}
 
-            avg_completion_time, _, _ = function.get_request_record().get_avg_completion_time()
-            avg_interval = function.get_avg_interval(self.system_time.get_system_runtime())
+            avg_completion_time = self.request_record.get_avg_completion_time_per_function(function_id)
+            avg_interval = self.request_record.get_avg_interval_per_function(self.system_time.get_system_runtime(), function_id)
             cpu = function.get_cpu()
             memory = function.get_memory()
             total_sequence_size = function.get_total_sequence_size()
 
-            is_timeout = False
-            is_success = True
-            request_record = function.get_request_record()
+            is_success = False
             i = 1
-            while i <= request_record.get_size():
-                request = request_record.get_total_request_record()[-i]
+            while i <= self.request_record.get_total_size_per_function(function_id):
+                request = self.request_record.get_total_request_record_per_function(function_id)[-i]
                 if request.get_is_done() is True:
-                    is_timeout = request.get_is_timeout()
                     is_success = request.get_is_success()
                     break
 
@@ -440,7 +384,6 @@ class LambdaRM():
             request_record_dict[function_id]["cpu"] = cpu
             request_record_dict[function_id]["memory"] = memory
             request_record_dict[function_id]["total_sequence_size"] = total_sequence_size
-            request_record_dict[function_id]["is_timeout"] = is_timeout
             request_record_dict[function_id]["is_success"] = is_success
 
         return request_record_dict
@@ -450,11 +393,9 @@ class LambdaRM():
         return self.resource_utils_record.get_record()
 
     def get_function_throughput(self):
-        throughput = 0
-        for function in self.profile.get_function_profile():
-            request_record = function.get_request_record()
-            throughput = throughput + request_record.get_success_size() + request_record.get_timeout_size() + request_record.get_error_size()
-
+        throughput = self.request_record.get_success_size() + \
+            self.request_record.get_timeout_size() + \
+                self.request_record.get_error_size()
         return throughput
 
     # Multiprocessing
@@ -512,11 +453,12 @@ class LambdaRM():
         # Function state
         function_state = []
         for function in self.profile.function_profile:
+            function_id = function.get_function_id()
             function_state.append(function.get_cpu())
             function_state.append(function.get_memory())
-            function_state.append(function.get_avg_interval(self.system_time.get_system_runtime()))
-            function_state.append(function.get_avg_completion_time())
-            function_state.append(function.get_is_cold_start())
+            function_state.append(self.request_record.get_avg_interval_per_function(self.system_time.get_system_runtime(), function_id))
+            function_state.append(self.request_record.get_avg_completion_time_per_function(function_id))
+            function_state.append(self.request_record.get_is_cold_start_per_function(function_id))
         
         # Observation space size: 1+3*n+5*m
         #
@@ -580,7 +522,7 @@ class LambdaRM():
         if observation is not None:
             n_undone_request = observation[0]
         else:
-            n_undone_request = self.get_n_undone_request_from_profile()
+            n_undone_request = self.request_record.get_undone_size()
         if self.system_time.get_system_step() >= self.timetable.get_size() and n_undone_request == 0:
             done = True
             
@@ -593,10 +535,9 @@ class LambdaRM():
     ):
         info = {
             "system_step": self.system_time.get_system_step(),
-            "avg_completion_time": self.get_avg_completion_time(),
-            "avg_completion_time_per_function": self.get_avg_completion_time_per_function(),
-            "timeout_num": self.get_total_timeout_num(),
-            "error_num": self.get_total_error_num(),
+            "avg_completion_time": self.request_record.get_avg_completion_time(),
+            "timeout_num": self.request_record.get_timeout_size(),
+            "error_num": self.get_error_size(),
             "request_record_dict": self.get_request_record_dict(),
             "system_runtime": self.system_time.get_system_runtime(),
             "function_throughput": self.get_function_throughput()
@@ -699,6 +640,9 @@ class LambdaRM():
         show_plot=True,
     ):
         rm = plot_prefix_name
+
+        # Set up logger
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Trends recording
         reward_trend = []
@@ -720,9 +664,6 @@ class LambdaRM():
             reward_sum = 0
 
             function_throughput_list = []
-
-            # Set up logger
-            logger = self.logger_wrapper.get_logger(rm, True)
             
             while True:
                 actual_time = actual_time + 1
@@ -850,6 +791,9 @@ class LambdaRM():
             return actions
 
         rm = plot_prefix_name
+
+        # Set up logger
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Record trends
         reward_trend = []
@@ -873,9 +817,6 @@ class LambdaRM():
             function_throughput_list = []
             
             action = self.action_space - 1
-            
-            # Set up logger
-            logger = self.logger_wrapper.get_logger(rm, True)
 
             # Set up completion time record
             completion_time_decay_record = {}
@@ -1170,6 +1111,9 @@ class LambdaRM():
         show_plot=True,
     ):
         rm = plot_prefix_name
+
+        # Set up logger
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -1210,9 +1154,6 @@ class LambdaRM():
 
             function_throughput_list = []
 
-            # Set up logger
-            logger = self.logger_wrapper.get_logger(rm, True)
-            
             while True:
                 actual_time = actual_time + 1
                 action, value_pred, log_prob = pg_agent.choose_action(observation)
@@ -1342,6 +1283,9 @@ class LambdaRM():
         show_plot=True,
     ):
         rm = plot_prefix_name
+
+        # Set up logger
+        logger = self.logger_wrapper.get_logger(rm, True)
         
         # Set up policy gradient agent
         pg_agent = PPO2Agent(
@@ -1379,9 +1323,6 @@ class LambdaRM():
 
             function_throughput_list = []
             
-            # Set up logger
-            logger = self.logger_wrapper.get_logger(rm, True)
-
             while True:
                 actual_time = actual_time + 1
                 action, value_pred, log_prob = pg_agent.choose_action(observation)
