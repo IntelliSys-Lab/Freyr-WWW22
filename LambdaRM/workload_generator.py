@@ -3,7 +3,7 @@ from utils import Function, Profile, Timetable
 from params import FunctionParameters, TimetableParameters
 
 
-class WorkflowGenerator():
+class WorkloadGenerator():
     """
     Generate workflows
     """

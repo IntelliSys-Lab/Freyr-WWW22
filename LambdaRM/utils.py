@@ -576,33 +576,33 @@ class ResourceUtilsRecord():
     def __init__(self, n_invoker):
         self.n_invoker = n_invoker
 
-        self.record = {}
+        self.resource_utils_record = {}
 
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
-            self.record[invoker] = {}
-            self.record[invoker]["cpu_util"] = []
-            self.record[invoker]["memory_util"] = []
-            self.record[invoker]["avg_cpu_util"] = 0
-            self.record[invoker]["avg_memory_util"] = 0
+            self.resource_utils_record[invoker] = {}
+            self.resource_utils_record[invoker]["cpu_util"] = []
+            self.resource_utils_record[invoker]["memory_util"] = []
+            self.resource_utils_record[invoker]["avg_cpu_util"] = 0
+            self.resource_utils_record[invoker]["avg_memory_util"] = 0
         
-        self.record["avg_invoker"] = {}
-        self.record["avg_invoker"]["cpu_util"] = []
-        self.record["avg_invoker"]["memory_util"] = []
-        self.record["avg_invoker"]["avg_cpu_util"] = 0
-        self.record["avg_invoker"]["avg_memory_util"] = 0
+        self.resource_utils_record["avg_invoker"] = {}
+        self.resource_utils_record["avg_invoker"]["cpu_util"] = []
+        self.resource_utils_record["avg_invoker"]["memory_util"] = []
+        self.resource_utils_record["avg_invoker"]["avg_cpu_util"] = 0
+        self.resource_utils_record["avg_invoker"]["avg_memory_util"] = 0
 
     def put_resource_utils(self, invoker, cpu_util, memory_util):
-        self.record[invoker]["cpu_util"].append(cpu_util)
-        self.record[invoker]["memory_util"].append(memory_util)
+        self.resource_utils_record[invoker]["cpu_util"].append(cpu_util)
+        self.resource_utils_record[invoker]["memory_util"].append(memory_util)
 
     def calculate_avg_resource_utils(self):
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
-            self.record[invoker]["avg_cpu_util"] = np.mean(self.record[invoker]["cpu_util"])
-            self.record[invoker]["avg_memory_util"] = np.mean(self.record[invoker]["memory_util"])
+            self.resource_utils_record[invoker]["avg_cpu_util"] = np.mean(self.resource_utils_record[invoker]["cpu_util"])
+            self.resource_utils_record[invoker]["avg_memory_util"] = np.mean(self.resource_utils_record[invoker]["memory_util"])
 
-        for timestep in range(len(self.record[invoker]["cpu_util"])):
+        for timestep in range(len(self.resource_utils_record["invoker0"]["cpu_util"])):
             cpu_util_tmp_list = []
             memory_util_tmp_list = []
             
@@ -610,35 +610,36 @@ class ResourceUtilsRecord():
                 if i == 0:
                     cpu_util_tmp_list = []
                     memory_util_tmp_list = []
+                    
+                invoker = "invoker{}".format(i)
+                cpu_util_tmp_list.append(self.resource_utils_record[invoker]["cpu_util"][timestep])
+                memory_util_tmp_list.append(self.resource_utils_record[invoker]["memory_util"][timestep])
 
-                cpu_util_tmp_list.append(self.record[invoker]["cpu_util"][timestep])
-                memory_util_tmp_list.append(self.record[invoker]["memory_util"][timestep])
+            self.resource_utils_record["avg_invoker"]["cpu_util"].append(np.mean(cpu_util_tmp_list))
+            self.resource_utils_record["avg_invoker"]["memory_util"].append(np.mean(memory_util_tmp_list))
 
-            self.record["avg_invoker"]["cpu_util"].append(np.mean(cpu_util_tmp_list))
-            self.record["avg_invoker"]["memory_util"].append(np.mean(memory_util_tmp_list))
-
-        self.record["avg_invoker"]["avg_cpu_util"] = np.mean(self.record["avg_invoker"]["cpu_util"])
-        self.record["avg_invoker"]["avg_memory_util"] = np.mean(self.record["avg_invoker"]["memory_util"])
+        self.resource_utils_record["avg_invoker"]["avg_cpu_util"] = np.mean(self.resource_utils_record["avg_invoker"]["cpu_util"])
+        self.resource_utils_record["avg_invoker"]["avg_memory_util"] = np.mean(self.resource_utils_record["avg_invoker"]["memory_util"])
     
-    def get_record(self):
-        return self.record
+    def get_resource_utils_record(self):
+        return self.resource_utils_record
 
     def reset(self):
-        self.record = {}
+        self.resource_utils_record = {}
         
         for i in range(self.n_invoker):
             invoker = "invoker{}".format(i)
-            self.record[invoker] = {}
-            self.record[invoker]["cpu_util"] = []
-            self.record[invoker]["memory_util"] = []
-            self.record[invoker]["avg_cpu_util"] = 0
-            self.record[invoker]["avg_memory_util"] = 0
+            self.resource_utils_record[invoker] = {}
+            self.resource_utils_record[invoker]["cpu_util"] = []
+            self.resource_utils_record[invoker]["memory_util"] = []
+            self.resource_utils_record[invoker]["avg_cpu_util"] = 0
+            self.resource_utils_record[invoker]["avg_memory_util"] = 0
 
-        self.record["avg_invoker"] = {}
-        self.record["avg_invoker"]["cpu_util"] = []
-        self.record["avg_invoker"]["memory_util"] = []
-        self.record["avg_invoker"]["avg_cpu_util"] = 0
-        self.record["avg_invoker"]["avg_memory_util"] = 0
+        self.resource_utils_record["avg_invoker"] = {}
+        self.resource_utils_record["avg_invoker"]["cpu_util"] = []
+        self.resource_utils_record["avg_invoker"]["memory_util"] = []
+        self.resource_utils_record["avg_invoker"]["avg_cpu_util"] = 0
+        self.resource_utils_record["avg_invoker"]["avg_memory_util"] = 0
 
         
     

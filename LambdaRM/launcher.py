@@ -1,5 +1,5 @@
 from params import FunctionParameters, TimetableParameters
-from workflow_generator import WorkflowGenerator
+from workload_generator import WorkloadGenerator
 from lambda_rm import LambdaRM
 
 
@@ -68,7 +68,7 @@ def launch():
     #     show_plot=False
     # )
     
-    # # Eval the best model
+    # # Evaluate the best model
     # lambda_rm.refresh_openwhisk()
     # lambda_rm.eval(
     #     max_episode=10,

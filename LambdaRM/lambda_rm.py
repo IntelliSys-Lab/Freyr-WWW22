@@ -227,7 +227,7 @@ class LambdaRM():
                 function_id = function.get_function_id()
                 for request_id in result_dict[function_id]:
                     request = Request(function_id, request_id, self.system_time.get_system_runtime())
-                    function.put_request(request)
+                    self.request_record.put_requests(request)
     
     # Multiprocessing
     def try_update_request_record(self):
@@ -357,11 +357,11 @@ class LambdaRM():
         else:
             time.sleep(self.cool_down)
                                         
-    def get_request_record_dict(self):
-        request_record_dict = {}
+    def get_function_dict(self):
+        function_dict = {}
         for function in self.profile.function_profile:
             function_id = function.get_function_id()
-            request_record_dict[function_id] = {}
+            function_dict[function_id] = {}
 
             avg_completion_time = self.request_record.get_avg_completion_time_per_function(function_id)
             avg_interval = self.request_record.get_avg_interval_per_function(self.system_time.get_system_runtime(), function_id)
@@ -379,18 +379,18 @@ class LambdaRM():
 
                 i = i + 1
 
-            request_record_dict[function_id]["avg_completion_time"] = avg_completion_time
-            request_record_dict[function_id]["avg_interval"] = avg_interval
-            request_record_dict[function_id]["cpu"] = cpu
-            request_record_dict[function_id]["memory"] = memory
-            request_record_dict[function_id]["total_sequence_size"] = total_sequence_size
-            request_record_dict[function_id]["is_success"] = is_success
+            function_dict[function_id]["avg_completion_time"] = avg_completion_time
+            function_dict[function_id]["avg_interval"] = avg_interval
+            function_dict[function_id]["cpu"] = cpu
+            function_dict[function_id]["memory"] = memory
+            function_dict[function_id]["total_sequence_size"] = total_sequence_size
+            function_dict[function_id]["is_success"] = is_success
 
-        return request_record_dict
+        return function_dict
 
     def get_resource_utils_record(self):
         self.resource_utils_record.calculate_avg_resource_utils()
-        return self.resource_utils_record.get_record()
+        return self.resource_utils_record.get_resource_utils_record()
 
     def get_function_throughput(self):
         throughput = self.request_record.get_success_size() + \
@@ -537,10 +537,11 @@ class LambdaRM():
             "system_step": self.system_time.get_system_step(),
             "avg_completion_time": self.request_record.get_avg_completion_time(),
             "timeout_num": self.request_record.get_timeout_size(),
-            "error_num": self.get_error_size(),
-            "request_record_dict": self.get_request_record_dict(),
+            "error_num": self.request_record.get_error_size(),
+            "function_dict": self.get_function_dict(),
             "system_runtime": self.system_time.get_system_runtime(),
-            "function_throughput": self.get_function_throughput()
+            "function_throughput": self.get_function_throughput(),
+            "request_record": self.request_record
         }
 
         if total_available_cpu is not None:
@@ -623,6 +624,7 @@ class LambdaRM():
         self.system_time.reset()
         self.profile.reset()
         self.resource_utils_record.reset()
+        self.request_record.reset()
         
         observation, total_available_cpu, total_available_memory = self.get_observation()
         
@@ -710,16 +712,28 @@ class LambdaRM():
                     error_num_trend.append(error_num)
 
                     # Log average completion time per function
-                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
-                    for function_id in avg_completion_time_per_function.keys():
-                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    request_record = info["request_record"]
+                    for function_id in avg_completion_time_per_function_trend.keys():
+                        avg_completion_time_per_function_trend[function_id].append(
+                            request_record.get_avg_completion_time_per_function(function_id)
+                        )
 
                     # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
-                    self.log_resource_utils(False, rm, episode, resource_utils_record)
+                    self.log_resource_utils(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        resource_utils_record=resource_utils_record
+                    )
 
                     # Log function throughput
-                    self.log_function_throughput(False, rm, episode, function_throughput_list)
+                    self.log_function_throughput(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        function_throughput_list=function_throughput_list
+                    )
                     
                     break
                 
@@ -777,9 +791,8 @@ class LambdaRM():
         def encode_action(function_profile, resource_adjust_list):
             actions = []
             
-            for function in function_profile:
+            for index, function in enumerate(function_profile):
                 function_id = function.get_function_id()
-                index = function_profile.index(function)
                 
                 if resource_adjust_list[function_id][0] != -1:
                     adjust_cpu = index*4 + resource_adjust_list[function_id][0]
@@ -836,7 +849,7 @@ class LambdaRM():
                     system_runtime = info["system_runtime"]
                     function_throughput_list.append(info["function_throughput"])
 
-                    record = info["request_record_dict"]
+                    record = info["function_dict"]
                     # total_available_cpu = 8*10
                     # total_available_memory = 32*10
                     total_available_cpu = info["total_available_cpu"]
@@ -1052,16 +1065,28 @@ class LambdaRM():
                     error_num_trend.append(error_num)
 
                     # Log average completion time per function
-                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
-                    for function_id in avg_completion_time_per_function.keys():
-                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    request_record = info["request_record"]
+                    for function_id in avg_completion_time_per_function_trend.keys():
+                        avg_completion_time_per_function_trend[function_id].append(
+                            request_record.get_avg_completion_time_per_function(function_id)
+                        )
 
                     # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
-                    self.log_resource_utils(False, rm, episode, resource_utils_record)
+                    self.log_resource_utils(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        resource_utils_record=resource_utils_record
+                    )
 
                     # Log function throughput
-                    self.log_function_throughput(False, rm, episode, function_throughput_list)
+                    self.log_function_throughput(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        function_throughput_list=function_throughput_list
+                    )
                     
                     break
             
@@ -1137,10 +1162,8 @@ class LambdaRM():
             function_id = function.get_function_id()
             avg_completion_time_per_function_trend[function_id] = []
         
-        # Pinpoint best avg completion time model
-        min_avg_completion_time = 10e8
-        min_timeout_or_error_num = 10e8
-        timeout_min_avg_completion_time = 10e8
+        # Record max sum rewards
+        max_reward_sum = -10e8
 
         # Start training
         for episode in range(max_episode):
@@ -1186,19 +1209,10 @@ class LambdaRM():
                     timeout_num = info["timeout_num"]
                     error_num = info["error_num"]
                     
-                    # Save best model that has min timeouts
-                    if timeout_num + error_num < min_timeout_or_error_num:
-                        min_timeout_or_error_num = timeout_num + error_num
-                        pg_agent.save("ckpt/best_timeout_or_error.pth")
-                    elif timeout_num + error_num == min_timeout_or_error_num:
-                        if avg_completion_time < timeout_min_avg_completion_time:
-                            timeout_min_avg_completion_time = avg_completion_time
-                            pg_agent.save("ckpt/best_timeout_or_error.pth")
-
-                    # Save best model that has min avg completion time
-                    if avg_completion_time < min_avg_completion_time:
-                        min_avg_completion_time = avg_completion_time
-                        pg_agent.save("ckpt/best_avg_completion_time.pth")
+                    # Save the best model
+                    if max_reward_sum < reward_sum:
+                        max_reward_sum = reward_sum
+                        pg_agent.save(model_save_path)
 
                     loss = pg_agent.propagate()
                     
@@ -1223,16 +1237,28 @@ class LambdaRM():
                     loss_trend.append(loss)
                     
                     # # Log average completion time per function
-                    # avg_completion_time_per_function = info["avg_completion_time_per_function"]
-                    # for function_id in avg_completion_time_per_function.keys():
-                    #     avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    # request_record = info["request_record"]
+                    # for function_id in avg_completion_time_per_function_trend.keys():
+                    #     avg_completion_time_per_function_trend[function_id].append(
+                    #         request_record.get_avg_completion_time_per_function(function_id)
+                    #     )
 
                     # # Log resource utilization 
                     # resource_utils_record = info["resource_utils_record"]
-                    # self.log_resource_utils(False, rm, episode, resource_utils_record)
+                    # self.log_resource_utils(
+                    #     rm_name=rm, 
+                    #     overwrite=False, 
+                    #     episode=episode, 
+                    #     resource_utils_record=resource_utils_record
+                    # )
 
                     # # Log function throughput
-                    # self.log_function_throughput(False, rm, episode, function_throughput_list)
+                    # self.log_function_throughput(
+                    #     rm_name=rm, 
+                    #     overwrite=False, 
+                    #     episode=episode, 
+                    #     function_throughput_list=function_throughput_list
+                    # )
                     
                     break
                 
@@ -1366,16 +1392,28 @@ class LambdaRM():
                     error_num_trend.append(error_num)
 
                     # Log average completion time per function
-                    avg_completion_time_per_function = info["avg_completion_time_per_function"]
-                    for function_id in avg_completion_time_per_function.keys():
-                        avg_completion_time_per_function_trend[function_id].append(avg_completion_time_per_function[function_id])
+                    request_record = info["request_record"]
+                    for function_id in avg_completion_time_per_function_trend.keys():
+                        avg_completion_time_per_function_trend[function_id].append(
+                            request_record.get_avg_completion_time_per_function(function_id)
+                        )
 
                     # Log resource utilization 
                     resource_utils_record = info["resource_utils_record"]
-                    self.log_resource_utils(False, rm, episode, resource_utils_record)
+                    self.log_resource_utils(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        resource_utils_record=resource_utils_record
+                    )
 
                     # Log function throughput
-                    self.log_function_throughput(False, rm, episode, function_throughput_list)
+                    self.log_function_throughput(
+                        rm_name=rm, 
+                        overwrite=False, 
+                        episode=episode, 
+                        function_throughput_list=function_throughput_list
+                    )
 
                     break
                 
@@ -1498,12 +1536,15 @@ class LambdaRM():
             logger.debug("{}:".format(rm_name))
             logger.debug(','.join(str(loss) for loss in loss_trend))
 
+        # Rollback handler 
+        logger = self.logger_wrapper.get_logger(rm_name, False)
+
     def log_resource_utils(
         self, 
-        overwrite,
         rm_name,
+        overwrite,
         episode,
-        record
+        resource_utils_record
     ):
         logger = self.logger_wrapper.get_logger("ResourceUtils", overwrite)
         logger.debug("")
@@ -1519,33 +1560,37 @@ class LambdaRM():
 
             logger.debug(invoker)
             logger.debug("cpu_util")
-            logger.debug(','.join(str(cpu_util) for cpu_util in record[invoker]["cpu_util"]))
+            logger.debug(','.join(str(cpu_util) for cpu_util in resource_utils_record[invoker]["cpu_util"]))
             logger.debug("memory_util")
-            logger.debug(','.join(str(memory_util) for memory_util in record[invoker]["memory_util"]))
+            logger.debug(','.join(str(memory_util) for memory_util in resource_utils_record[invoker]["memory_util"]))
             logger.debug("avg_cpu_util")
-            logger.debug(record[invoker]["avg_cpu_util"])
+            logger.debug(resource_utils_record[invoker]["avg_cpu_util"])
             logger.debug("avg_memory_util")
-            logger.debug(record[invoker]["avg_memory_util"])
+            logger.debug(resource_utils_record[invoker]["avg_memory_util"])
             logger.debug("")
 
         logger.debug("avg_invoker")
         logger.debug("cpu_util")
-        logger.debug(','.join(str(cpu_util) for cpu_util in record["avg_invoker"]["cpu_util"]))
+        logger.debug(','.join(str(cpu_util) for cpu_util in resource_utils_record["avg_invoker"]["cpu_util"]))
         logger.debug("memory_util")
-        logger.debug(','.join(str(memory_util) for memory_util in record["avg_invoker"]["memory_util"]))
+        logger.debug(','.join(str(memory_util) for memory_util in resource_utils_record["avg_invoker"]["memory_util"]))
         logger.debug("avg_cpu_util")
-        logger.debug(record["avg_invoker"]["avg_cpu_util"])
+        logger.debug(resource_utils_record["avg_invoker"]["avg_cpu_util"])
         logger.debug("avg_memory_util")
-        logger.debug(record["avg_invoker"]["avg_memory_util"])
+        logger.debug(resource_utils_record["avg_invoker"]["avg_memory_util"])
+
+        # Rollback handler 
+        logger = self.logger_wrapper.get_logger(rm_name, False)
 
     def log_function_throughput(
         self,
-        overwrite,
         rm_name,
+        overwrite,
         episode,
         function_throughput_list
     ):
         logger = self.logger_wrapper.get_logger("FunctionThroughput", overwrite)
+
         logger.debug("")
         logger.debug("**********")
         logger.debug("**********")
@@ -1555,4 +1600,6 @@ class LambdaRM():
         logger.debug("{} episode {}:".format(rm_name, episode))
         logger.debug("function_throughput")
         logger.debug(','.join(str(function_throughput) for function_throughput in function_throughput_list))
-
+        
+        # Rollback handler 
+        logger = self.logger_wrapper.get_logger(rm_name, False)
