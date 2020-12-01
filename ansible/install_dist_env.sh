@@ -80,12 +80,12 @@ sudo ansible-playbook -i environments/distributed routemgmt.yml
 # Configure wsk cli
 #
 
-../bin/wsk property set --auth $(cat files/auth.guest) --apihost https://$(cat environments/distributed/hosts | grep -A 1 "\[edge\]" | grep ansible_host | awk {'print $1'}):443 
+wsk property set --auth $(cat files/auth.guest) --apihost https://$(cat environments/distributed/hosts | grep -A 1 "\[edge\]" | grep ansible_host | awk {'print $1'}):443 
 
 #
 # Test wsk cli
 #
 
-../bin/wsk list -vi
-../bin/wsk property get -i
+wsk list -vi
+wsk property get -i
 
