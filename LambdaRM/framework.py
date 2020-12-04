@@ -14,9 +14,9 @@ from params import WSK_CLI
 
 
 
-class LambdaRM():
+class Framework():
     """ 
-    LambdaRM: Serverless Resource Management via Reinforce Learning.
+    Wrapper for OpenWhisk serverless framework
     """
 
     def __init__(
@@ -80,7 +80,9 @@ class LambdaRM():
     #
 
     def decode_action(self, action):
+        function_profile_list = list(self.params.get_function_profile().keys())
         function_index = int(action/4)
+        function_id = function_profile_list[function_index].get_function_id()
         resource = None
         adjust = 0
         
@@ -97,45 +99,46 @@ class LambdaRM():
             resource = 1 # Memory
             adjust = 1 # Increase one slot
         
-        return function_index, resource, adjust
-
+        return function_id, resource, adjust
     
     def update_function_profile(self, action):
+        function_profile = self.profile.get_function_profile()
+
         if isinstance(action, list): # WARNING! Only used by greedy RM!
             actions = action
             for act in actions:
-                function_index, resource, adjust = self.decode_action(act)
-                # if self.profile.function_profile[function_index].validate_resource_adjust(resource, adjust) is True:
-                #     self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
+                function_id, resource, adjust = self.decode_action(act)
+                function = function_profile[function_id]
+                # if function_profile[function_id].validate_resource_adjust(resource, adjust) is True:
+                #     function_profile[function_id].set_resource_adjust(resource, adjust)
+                function.set_resource_adjust(resource, adjust)
 
-                self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
-
-                # Set the sequence of this function as well
-                if self.profile.function_profile[function_index].get_sequence() is not None:
-                    sequence = self.profile.function_profile[function_index].get_sequence()
-                    for function_id in sequence:
-                        for function in self.profile.get_function_profile():
-                            if function_id == function.get_function_id():
-                                function.set_resource_adjust(resource, adjust)
-                                break
+                # Set the sequence members as well if it is a function sequence
+                if function.get_sequence() is not None:
+                    sequence = function.get_sequence()
+                    for member_id in sequence:
+                        function_profile[member_id].set_resource_adjust(resource, adjust)
             
             return False
-        
-        if action == self.action_space - 1: # Explicit invalid action
-            return False
         else:
-            function_index, resource, adjust = self.decode_action(action)
-            if self.profile.function_profile[function_index].validate_resource_adjust(resource, adjust) is True:
-                self.profile.function_profile[function_index].set_resource_adjust(resource, adjust)
-                return True
+            if action == self.action_space - 1: # Explicit invalid action
+                return False
             else:
-                return False # Implicit invalid action
+                function_id, resource, adjust = self.decode_action(action)
+                function = function_profile[function_id]
+                if function.validate_resource_adjust(resource, adjust) is True:
+                    function.set_resource_adjust(resource, adjust)
+                    return True
+                else:
+                    return False # Implicit invalid action
 
     # # Multiprocessing
     # def update_openwhisk(self):
+    #     function_profile = self.profile.get_function_profile()
     #     jobs = []
 
-    #     for function in self.profile.function_profile:
+    #     for function_id in function_profile.keys():
+    #         function = function_profile[function_id]
     #         if function.get_is_resource_changed() is True:
     #             p = multiprocessing.Process(
     #                 target=function.update_openwhisk,
@@ -147,71 +150,66 @@ class LambdaRM():
     #     for p in jobs:
     #         p.join()
 
-    # Multiprocessing
     def update_openwhisk(self):
-        # Update functions excluding alexa and imageProcessSequence entry
-        for function in self.profile.function_profile:
-            function_id = function.get_function_id()
-            if "alexa" not in function_id and function_id != "imageProcessSequence":
+        function_profile = self.profile.get_function_profile() 
+        sequence_dict = self.profile.get_sequence_dict()
+
+        # Update functions except for sequence entries
+        for function_id in function_profile.keys():
+            function = function_profile[function_id]
+            if function_id not in sequence_dict.keys():
                 function.update_openwhisk()
+        
+        # Collect sequence updates
+        updated_sequence_dict = {}
+        for entry in sequence_dict.keys():
+            member_list = sequence_dict[entry]
+            updated_sequence_dict[entry] = []
 
-        entry = "imageProcessSequence"
-        member_list = [
-            "extractImageMetadata",
-            "transformMetadata",
-            "handler",
-            "thumbnail",
-            "storeImageMetadata"
-        ]
-        self.update_openwhisk_sequence(entry, member_list)
+            for member_id in member_list:
+                member_actual_id = function_profile[member_id].get_function_actual_id()
+                updated_sequence_dict[entry].append(member_actual_id)
 
-        # Update the rest
+        # Multiprocessing
+        def update_sequence(entry, member_list):
+            cmd = '{} action update {} --sequence'.format(WSK_CLI, entry)
+            for index, member in enumerate(member_list):
+                if index == 0:
+                    cmd = '{} {}'.format(cmd, member)
+                else:
+                    cmd = '{},{}'.format(cmd, member)
+
+            run_cmd(cmd)
+
+        # Update function sequences
         jobs = []
 
-        for function in self.profile.function_profile:
-            function_id = function.get_function_id()
-            if "alexa" in function_id or function_id == "imageProcessSequence":
-                if function.get_is_resource_changed() is True:
-                    p = multiprocessing.Process(
-                        target=function.update_openwhisk,
-                        args=()
-                    )
-                    jobs.append(p)
-                    p.start()
+        for entry in updated_sequence_dict.keys():
+            member_list = updated_sequence_dict[entry]
+            p = multiprocessing.Process(
+                target=update_sequence,
+                args=(entry, member_list)
+            )
+            jobs.append(p)
+            p.start()
         
         for p in jobs:
             p.join()
 
-    # Update image processing sequence
-    def update_openwhisk_sequence(self, entry, member_list):
-        function_dict = {}
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
-            function_dict[function_id] = function.get_function_name()
-
-        cmd = '{} action update {} --sequence'.format(WSK_CLI, entry)
-        for i in range(len(member_list)):
-            member = function_dict[member_list[i]]
-            if i == 0:
-                cmd = '{} {}'.format(cmd, member)
-            else:
-                cmd = '{},{}'.format(cmd, member)
-
-        run_cmd(cmd)
-
     # Multiprocessing
     def invoke_openwhisk(self):
+        function_profile = self.profile.get_function_profile()
         timestep = self.timetable.get_timestep(self.system_time.get_system_step()-1)
         if timestep is not None:
             manager = multiprocessing.Manager()
             result_dict = manager.dict()
             jobs = []
 
-            for function_i in range(self.profile.get_size()):
-                function = self.profile.get_function_profile()[function_i]
-                function_id = function.get_function_id()
+            for function_id in timestep.keys():
+                invoke_num = timestep[function_id]
+                function = function_profile[function_id]
                 result_dict[function_id] = manager.list()
-                for _ in range(timestep[function_i]):
+                for _ in range(invoke_num):
                     p = multiprocessing.Process(
                         target=function.invoke_openwhisk,
                         args=(result_dict,)
@@ -223,20 +221,19 @@ class LambdaRM():
                 p.join()
 
             # Create requests according to the result dict
-            for function in self.profile.get_function_profile():
-                function_id = function.get_function_id()
+            for function_id in function_profile.keys():
                 for request_id in result_dict[function_id]:
                     request = Request(function_id, request_id, self.system_time.get_system_runtime())
                     self.request_record.put_requests(request)
     
     # Multiprocessing
     def try_update_request_record(self):
+        function_profile = self.profile.get_function_profile()
         manager = multiprocessing.Manager()
         result_dict = manager.dict()
         jobs = []
 
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
+        for function_id in function_profile.keys():
             result_dict[function_id] = manager.dict()
             for request in self.request_record.get_undone_request_record_per_function(function_id):
                 request_id = request.get_request_id()
@@ -264,9 +261,7 @@ class LambdaRM():
         total_completion_time = 0
         done_request_list = []
 
-        for function in self.profile.function_profile:
-            function_id = function.get_function_id()
-
+        for function_id in function_profile.keys():
             for request in self.request_record.get_undone_request_record_per_function(function_id):
                 request_id = request.get_request_id()
 
@@ -358,9 +353,10 @@ class LambdaRM():
             time.sleep(self.cool_down)
                                         
     def get_function_dict(self):
+        function_profile = self.profile.get_function_profile()
         function_dict = {}
-        for function in self.profile.function_profile:
-            function_id = function.get_function_id()
+        for function_id in function_profile.keys():
+            function = function_profile[function_id]
             function_dict[function_id] = {}
 
             avg_completion_time = self.request_record.get_avg_completion_time_per_function(function_id)
@@ -410,6 +406,8 @@ class LambdaRM():
 
     # Multiprocessing
     def get_observation(self):
+        function_profile = self.profile.get_function_profile()
+
         # Controller state
         controller_state = []
         n_undone_request = int(self.redis_client.get("n_undone_request"))
@@ -452,8 +450,8 @@ class LambdaRM():
 
         # Function state
         function_state = []
-        for function in self.profile.function_profile:
-            function_id = function.get_function_id()
+        for function_id in function_profile.keys():
+            function = function_profile[function_id]
             function_state.append(function.get_cpu())
             function_state.append(function.get_memory())
             function_state.append(self.request_record.get_avg_interval_per_function(self.system_time.get_system_runtime(), function_id))
@@ -606,7 +604,9 @@ class LambdaRM():
             )
 
             # Reset resource adjust direction for each function 
-            for function in self.profile.function_profile:
+            function_profile = self.profile.get_function_profile()
+            for function_id in function_profile.keys():
+                function = function_profile[function_id]
                 function.reset_resource_adjust_direction()
 
         # Done?
@@ -652,8 +652,8 @@ class LambdaRM():
         timeout_num_trend = []
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
+        function_profile = self.profile.get_function_profile()
+        for function_id in function_profile.keys():
             avg_completion_time_per_function_trend[function_id] = []
         
         # Start training
@@ -789,11 +789,10 @@ class LambdaRM():
         #
 
         def encode_action(function_profile, resource_adjust_list):
+            function_profile_list = list(function_profile.keys())
             actions = []
             
-            for index, function in enumerate(function_profile):
-                function_id = function.get_function_id()
-                
+            for index, function_id in enumerate(function_profile_list):
                 if resource_adjust_list[function_id][0] != -1:
                     adjust_cpu = index*4 + resource_adjust_list[function_id][0]
                     actions.append(adjust_cpu)
@@ -814,8 +813,8 @@ class LambdaRM():
         timeout_num_trend = []
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
+        function_profile = self.profile.get_function_profile()
+        for function_id in function_profile.keys():
             avg_completion_time_per_function_trend[function_id] = []
         
         # Start training
@@ -833,8 +832,7 @@ class LambdaRM():
 
             # Set up completion time record
             completion_time_decay_record = {}
-            for function in self.profile.function_profile:
-                function_id = function.get_function_id()
+            for function_id in function_profile.keys():
                 completion_time_decay_record[function_id] = {}
                 completion_time_decay_record[function_id]["old_completion_time"] = 0
                 completion_time_decay_record[function_id]["new_completion_time"] = 0
@@ -861,8 +859,7 @@ class LambdaRM():
 
                     # Adjustment for each function, default hold
                     resource_adjust_list = {}
-                    for function in self.profile.function_profile:
-                        function_id = function.get_function_id()
+                    for function_id in function_profile.keys():
                         resource_adjust_list[function_id] = [-1, -1]
                     
                     # Update completion time decay for each function
@@ -1030,7 +1027,7 @@ class LambdaRM():
                     #                 id_decrease, completion_time_decay_record[id_decrease]["decay"], record[id_decrease]["cpu"], record[id_decrease]["memory"])
                     #             )
                     
-                    action = encode_action(self.profile.function_profile, resource_adjust_list)
+                    action = encode_action(self.profile.get_function_profile(), resource_adjust_list)
 
                 logger.debug("")
                 logger.debug("Actual timestep {}".format(actual_time))
@@ -1125,10 +1122,10 @@ class LambdaRM():
         )
 
     #
-    # Policy gradient training
+    # LambdaRM training
     #
 
-    def train(
+    def lambda_rm_train(
         self,
         max_episode=150,
         plot_prefix_name="LambdaRM_train",
@@ -1158,8 +1155,8 @@ class LambdaRM():
         error_num_trend = []
         loss_trend = []
         avg_completion_time_per_function_trend = {}
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
+        function_profile = self.profile.get_function_profile()
+        for function_id in function_profile.keys():
             avg_completion_time_per_function_trend[function_id] = []
         
         # Record max sum rewards
@@ -1300,7 +1297,7 @@ class LambdaRM():
             loss_trend=loss_trend,
         )
 
-    def eval(
+    def lambda_rm_eval(
         self,
         max_episode=10,
         checkpoint_path="ckpt/best_avg_completion_time.pth",
@@ -1333,8 +1330,8 @@ class LambdaRM():
         timeout_num_trend = []
         error_num_trend = []
         avg_completion_time_per_function_trend = {}
-        for function in self.profile.get_function_profile():
-            function_id = function.get_function_id()
+        function_profile = self.profile.get_function_profile()
+        for function_id in function_profile.keys():
             avg_completion_time_per_function_trend[function_id] = []
         
         # Start training

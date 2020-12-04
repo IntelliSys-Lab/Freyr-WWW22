@@ -5,7 +5,7 @@ from params import FunctionParameters, TimetableParameters
 
 class WorkloadGenerator():
     """
-    Generate workflows
+    Generate workloads
     """
     def azure_params(
         self,
@@ -52,28 +52,16 @@ class WorkloadGenerator():
             function_params_dict[function_id]["cpu_saturation_point"] = saturation_point
 
         # Create Profile paramters
-        function_params = []
+        profile_params = {}
 
         for function_id in function_params_dict.keys():
             if function_id == "imageProcessSequence":
                 sequence = [
-                    "storeImageMetadata", 
+                    "extractImageMetadata", 
                     "thumbnail", 
                     "handler", 
                     "transformMetadata", 
-                    "extractImageMetadata"
-                ]
-            elif function_id == "alexa-frontend":
-                sequence = [
-                    "alexa-smarthome", 
-                    "alexa-home-plug", 
-                    "alexa-home-air-conditioning", 
-                    "alexa-home-tv", 
-                    "alexa-home-light",
-                    "alexa-home-door",
-                    "alexa-reminder",
-                    "alexa-fact",
-                    "alexa-interact",
+                    "storeImageMetadata"
                 ]
             else:
                 sequence = None
@@ -89,9 +77,7 @@ class WorkloadGenerator():
                 sequence=sequence
             )
             
-            function_params.append(param)
-
-        profile_params = function_params
+            profile_params[function_id] = param
 
         # Create timetable based on invocation traces
         timetable_params = TimetableParameters(
@@ -103,23 +89,21 @@ class WorkloadGenerator():
         return profile_params, timetable_params
 
     def generate_profile(self, profile_params):
-        function_params = profile_params
-        function_list = []
+        function_profile = {}
         
         # Hardcoded parameters of functions
-        for param in function_params:
-            if param.function_id == "alu":
+        for function_id in profile_params.keys():
+            param = profile_params[function_id]
+            if function_id == "alu":
                 param.invoke_params = "-p loopTime 100000000 -p parallelIndex 100" # 64: 0.6 sec, 1: 8.3 sec
-            elif param.function_id == "ms":
+            elif function_id == "ms":
                 param.invoke_params = "-p listSize 300000 -p loopTime 1" # 64: 1.3 sec, 1: 5.5 sec
-            elif param.function_id == "gd":
+            elif function_id == "gd":
                 param.invoke_params = "-p x_row 50 -p x_col 50 -p w_row 50 -p loopTime 1" # 64: 2.2 sec, 1: 8.7 sec
-            elif param.function_id == "knn":
+            elif function_id == "knn":
                 param.invoke_params = "-p datasetSize 10000 -p featureDim 1000 -p k 3 -p loopTime 1" # 64: 1.7 sec, 1: 7.2 sec
-            elif param.function_id == "imageProcessSequence":
+            elif function_id == "imageProcessSequence":
                 param.invoke_params = "-p imageName test.jpg" # 64: 11.5 sec, 1: 26.6 sec
-            elif param.function_id == "alexa-frontend":
-                param.invoke_params = "-p utter 'open smarthome to I love Taylor Swift'" # 64: 4 sec, 1: 9.6 sec
             
             function = Function(param)
 
@@ -135,9 +119,9 @@ class WorkloadGenerator():
                 memory=param.memory_saturation_point
             ) 
             
-            function_list.append(function)
+            function_profile[function_id] = function
         
-        profile = Profile(function_profile=function_list)
+        profile = Profile(function_profile=function_profile)
 
         return profile
     
@@ -149,18 +133,21 @@ class WorkloadGenerator():
         max_timestep = timetable_params.max_timestep
         invocation_traces = timetable_params.azure_invocation_traces
 
-        function_list = profile.function_profile
+        function_profile = profile.get_function_profile()
         timetable_list = []
 
         for i in range(max_timestep):
-            timestep = []
+            timestep = {}
 
             for _, row in invocation_traces.iterrows():
-                timestep.append(row["{}".format(i+1)])
+                function_id = row["FunctionId"]
+                invoke_num = row["{}".format(i+1)]
+                timestep[function_id] = invoke_num
 
             timetable_list.append(timestep)
-        
+
         timetable = Timetable(timetable_list)
+
         return timetable
 
     def generate_timetable(
@@ -173,7 +160,7 @@ class WorkloadGenerator():
         
         return timetable
     
-    def generate_workflow(
+    def generate_workload(
         self, 
         default="azure",
         profile_params=None, 

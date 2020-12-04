@@ -23,7 +23,7 @@ class Function():
         self.function_id = self.params.function_id
         self.sequence = self.params.sequence
 
-        self.function_name = self.function_id
+        self.function_actual_id = self.function_id
 
         self.resource_adjust_direction = [0, 0] # [cpu, memory]
         self.is_resource_changed = True
@@ -38,8 +38,8 @@ class Function():
     def get_function_id(self):
         return self.function_id
 
-    def get_function_name(self):
-        return self.function_name
+    def get_function_actual_id(self):
+        return self.function_actual_id
 
     def get_sequence(self):
         return self.sequence
@@ -140,11 +140,7 @@ class Function():
     #     run_cmd(cmd)
         
     def update_openwhisk(self):
-        if "alexa" not in self.function_id and self.function_id != "imageProcessSequence":
-            self.function_name = "{}_{}".format(self.function_id, self.translate_to_openwhisk())
-        else:
-            cmd = '{} action update {} -m {}'.format(WSK_CLI, self.function_id, self.translate_to_openwhisk())
-            run_cmd(cmd)
+        self.function_actual_id = "{}{}".format(self.function_id, self.translate_to_openwhisk())
 
     # # Multiprocessing
     # def invoke_openwhisk(self, result_dict):
@@ -159,9 +155,9 @@ class Function():
     # Multiprocessing
     def invoke_openwhisk(self, result_dict):
         if self.params.invoke_params == None:
-            cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_name, "{'print $6'}")
+            cmd = '{} action invoke {} | awk {}'.format(WSK_CLI, self.function_actual_id, "{'print $6'}")
         else:
-            cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_name, self.params.invoke_params, "{'print $6'}")
+            cmd = '{} action invoke {} {} | awk {}'.format(WSK_CLI, self.function_actual_id, self.params.invoke_params, "{'print $6'}")
         
         request_id = str(run_cmd(cmd))
         result_dict[self.function_id].append(request_id)
@@ -334,8 +330,7 @@ class RequestRecord():
         self.timeout_request_record_per_function = {}
         self.error_request_record_per_function = {}
 
-        for function in function_profile:
-            function_id = function.get_function_id()
+        for function_id in function_profile.keys():
             self.total_request_record_per_function[function_id] = []
             self.success_request_record_per_function[function_id] = []
             self.undone_request_record_per_function[function_id] = []
@@ -650,16 +645,26 @@ class Profile():
     
     def __init__(self, function_profile):
         self.function_profile = function_profile
-        self.default_function_profile = function_profile
+        self.default_function_profile = cp.deepcopy(function_profile)
+
+        self.sequence_dict = {}
+        for function_id in self.function_profile.keys():
+            function = self.function_profile[function_id]
+            if function.get_sequence() is not None:
+                self.sequence_dict[function_id] = function.get_sequence()
         
     def put_function(self, function):
-        self.function_profile.append(function)
+        function_id = function.get_function_id()
+        self.function_profile[function_id] = function
     
     def get_size(self):
         return len(self.function_profile)
 
     def get_function_profile(self):
         return self.function_profile
+
+    def get_sequence_dict(self):
+        return self.sequence_dict
 
     def reset(self):
         self.function_profile = cp.deepcopy(self.default_function_profile)
@@ -672,19 +677,18 @@ class Timetable():
     
     def __init__(self, timetable=[]):
         self.timetable = timetable
-        self.size = len(self.timetable)
         
     def put_timestep(self, row):
         self.timetable.append(row)
         
     def get_timestep(self, timestep):
-        if timestep >= len(self.timetable):
+        if timestep >= self.get_size():
             return None
         else:
             return self.timetable[timestep]
     
     def get_size(self):
-        return self.size
+        return len(self.timetable)
     
 
 class SystemTime():

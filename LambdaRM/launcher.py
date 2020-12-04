@@ -1,25 +1,25 @@
 from params import FunctionParameters, TimetableParameters
 from workload_generator import WorkloadGenerator
-from lambda_rm import LambdaRM
+from framework import Framework
 
 
 
 def launch():
 
-    # Generate workflow
-    workflow_generator = WorkflowGenerator()
+    # Generate workload
+    workload_generator = WorkloadGenerator()
     profile_params = None # Default Azure traces
     timetable_params = None # Default Azure traces
     
-    profile, timetable = workflow_generator.generate_workflow(
+    profile, timetable = workload_generator.generate_workload(
         default="azure",
         profile_params=profile_params,
         timetable_params=timetable_params,
-        max_timestep=120
+        max_timestep=60
     )
     
-    # Set up LambdaRM
-    lambda_rm = LambdaRM(
+    # Set up serverless framework
+    framework = Framework(
         redis_host="192.168.196.213",
         redis_port=6379,
         redis_password="openwhisk",
@@ -30,18 +30,18 @@ def launch():
         couch_port = "5984",
         # cool_down="refresh",
         cool_down=65,
-        interval_limit=5,
+        interval_limit=1,
         fail_penalty=60,
         decay_factor=0.9,
         profile=profile,
         timetable=timetable,
     )
 
-    # lambda_rm.refresh_couchdb_and_openwhisk()
-    # lambda_rm.refresh_openwhisk()
+    # framework.refresh_couchdb_and_openwhisk()
+    # framework.refresh_openwhisk()
     
     # Fixed RM
-    lambda_rm.fixed_rm(
+    framework.fixed_rm(
         # max_episode=10,
         max_episode=1,
         plot_prefix_name="FixedRM",
@@ -50,8 +50,8 @@ def launch():
     )
 
     # Greedy RM
-    # lambda_rm.refresh_openwhisk()
-    # lambda_rm.greedy_rm(
+    # framework.refresh_openwhisk()
+    # framework.greedy_rm(
     #     # max_episode=10,
     #     max_episode=1,
     #     plot_prefix_name="GreedyRM",
@@ -59,18 +59,18 @@ def launch():
     #     show_plot=False
     # )
 
-    # # Train
-    # lambda_rm.refresh_openwhisk()
-    # lambda_rm.train(
-    #     max_episode=100,
+    # # Lambda RM train
+    # framework.refresh_openwhisk()
+    # framework.lambda_rm_train(
+    #     max_episode=500,
     #     plot_prefix_name="LambdaRM_train",
     #     save_plot=True,
     #     show_plot=False
     # )
     
-    # # Evaluate the best model
-    # lambda_rm.refresh_openwhisk()
-    # lambda_rm.eval(
+    # # Lambda RM eval the best model
+    # framework.refresh_openwhisk()
+    # framework.lambda_rm_eval(
     #     max_episode=10,
     #     checkpoint_path="ckpt/best_model.pth",
     #     plot_prefix_name="LambdaRM_eval",
